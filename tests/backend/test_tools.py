@@ -186,3 +186,89 @@ def test_link_items_become_link_annotations(client, auth):
     annots = [a.get_object() for a in pdf(client, auth, d).pages[0]["/Annots"]]
     assert len(annots) == 1 and annots[0]["/Subtype"] == "/Link" and annots[0]["/A"]["/URI"] == "https://example.com/page"
     assert [round(float(v)) for v in annots[0]["/Rect"]] == [72, 682, 172, 712]
+
+
+def test_bates_nup_resize_mix_and_bookmark_split(client, auth):
+    d = make(client, auth, ["One", "Two", "Three"], "case.pdf")
+    assert tool(client, auth, "bates", document_id=d, prefix="ABC-", start=7, digits=5).status_code == 200
+    assert ["ABC-00007" in t and "ABC-00008" not in t for t in texts(client, auth, d)][0]
+    assert "ABC-00009" in texts(client, auth, d)[2]
+
+    two = tool(client, auth, "nup", document_id=d, per_sheet=2)
+    assert two.status_code == 201, two.text
+    sheets = pdf(client, auth, two.json()["id"]).pages
+    assert len(sheets) == 2 and round(float(sheets[0].mediabox.width)) == 842
+    assert "One" in sheets[0].extract_text() and "Two" in sheets[0].extract_text() and "Three" in sheets[1].extract_text()
+    assert tool(client, auth, "nup", document_id=d, per_sheet=4).json()["page_count"] == 1
+    assert tool(client, auth, "nup", document_id=d, per_sheet=3).status_code == 422
+
+    assert tool(client, auth, "resize", document_id=d, size="a5").status_code == 200
+    page = pdf(client, auth, d).pages[0]
+    assert [round(float(page.mediabox.width)), round(float(page.mediabox.height))] == [420, 595] and "One" in page.extract_text()
+
+    other = make(client, auth, ["X1", "X2"])
+    mixed = tool(client, auth, "mix", document_ids=[other, d], name="Zip")
+    assert mixed.status_code == 201, mixed.text
+    assert [t.split()[0] if i % 2 == 0 or i == 4 else t for i, t in enumerate(texts(client, auth, mixed.json()["id"]))][0] == "X1"
+    assert len(pdf(client, auth, mixed.json()["id"]).pages) == 5
+
+    w = PdfWriter(clone_from=PdfReader(io.BytesIO(build_pdf(["Intro", "Ch1 a", "Ch1 b", "Ch2"]))))
+    w.add_outline_item("Chapter 1", 1)
+    w.add_outline_item("Chapter 2", 3)
+    buf = io.BytesIO(); w.write(buf)
+    book = upload(client, auth, buf.getvalue(), "book.pdf").json()["id"]
+    parts = tool(client, auth, "split", document_id=book, mode="bookmarks")
+    assert parts.status_code == 201, parts.text
+    assert [texts(client, auth, p["id"]) for p in parts.json()["documents"]] == [["Intro"], ["Ch1 a", "Ch1 b"], ["Ch2"]]
+    assert tool(client, auth, "split", document_id=other, mode="bookmarks").status_code == 422
+
+
+def test_grayscale_flatten_annotations_images_and_repair(client, auth):
+    photo = io.BytesIO()
+    Image.new("RGB", (300, 200), (220, 30, 30)).save(photo, "PNG")
+    doc = client.post("/api/tools/images-to-pdf", headers=auth, data={"page_size": "fit", "name": "Red"},
+                      files=[("files", ("p.png", photo.getvalue(), "image/png"))]).json()["id"]
+    z = tool(client, auth, "extract-images", document_id=doc)
+    assert z.status_code == 200, z.text
+    names = zipfile.ZipFile(io.BytesIO(z.content)).namelist()
+    assert len(names) == 1 and names[0].startswith("page-001-image-001.")
+    assert tool(client, auth, "extract-images", document_id=make(client, auth, ["No pictures"])).status_code == 422
+
+    grey = tool(client, auth, "grayscale", document_id=doc, dpi=100)
+    assert grey.status_code == 201, grey.text
+    picture = pdf(client, auth, grey.json()["id"]).pages[0].images[0].image.convert("RGB")
+    r, g, b = picture.getpixel((picture.width // 2, picture.height // 2))
+    assert abs(r - g) < 6 and abs(g - b) < 6 and r < 200          # the red page is now a mid grey
+
+    d = make(client, auth, ["Annotated"])
+    client.post("/api/edit/apply", headers=auth, json={"document_id": d, "items": [
+        {"type": "link", "page": 1, "x": 72, "y": 80, "w": 100, "h": 30, "url": "https://example.com"},
+        {"type": "field", "page": 1, "x": 72, "y": 200, "w": 200, "h": 22, "field": "text", "name": "City"},
+        {"type": "field", "page": 1, "x": 72, "y": 240, "w": 16, "h": 16, "field": "checkbox", "name": "Agree"},
+        {"type": "field", "page": 1, "x": 72, "y": 280, "w": 200, "h": 22, "field": "text", "name": "City"}]})
+    fields = {f["name"]: f["type"] for f in client.get(f"/api/tools/form/{d}", headers=auth).json()["fields"]}
+    assert fields == {"City": "text", "Agree": "checkbox", "City 2": "text"}          # duplicate names are made unique
+    assert tool(client, auth, "form", document_id=d, values={"City": "Jaipur", "Agree": True}).status_code == 200
+    filled = {f["name"]: f["value"] for f in client.get(f"/api/tools/form/{d}", headers=auth).json()["fields"]}
+    assert filled["City"] == "Jaipur" and filled["Agree"] is True
+    bad = client.post("/api/edit/apply", headers=auth, json={"document_id": d, "items": [
+        {"type": "field", "page": 1, "x": 1, "y": 1, "w": 50, "h": 20, "name": "a.b"}]})
+    assert bad.status_code == 422
+
+    assert tool(client, auth, "remove-annotations", document_id=d, what="links").status_code == 200
+    kinds = [a.get_object()["/Subtype"] for a in pdf(client, auth, d).pages[0]["/Annots"]]
+    assert kinds == ["/Widget", "/Widget", "/Widget"]
+    assert tool(client, auth, "remove-annotations", document_id=d, what="comments").status_code == 422   # none left of that kind
+    assert tool(client, auth, "flatten", document_id=d).status_code == 200
+    flat = pdf(client, auth, d)
+    assert not flat.get_fields() and "Jaipur" in flat.pages[0].extract_text() and "Annotated" in flat.pages[0].extract_text()
+
+    # repair: a file whose cross-reference table is cut off is rejected by upload but rebuilt by the tool
+    good = build_pdf(["Still here"])
+    broken = good[:good.rindex(b"xref")]
+    assert upload(client, auth, broken, "hurt.pdf").status_code in (201, 422)
+    fixed = client.post("/api/tools/repair", headers=auth, files={"file": ("hurt.pdf", broken, "application/pdf")})
+    assert fixed.status_code == 201, fixed.text
+    assert fixed.json()["original_filename"] == "hurt (repaired).pdf" and texts(client, auth, fixed.json()["id"]) == ["Still here"]
+    junk = client.post("/api/tools/repair", headers=auth, files={"file": ("x.pdf", b"%PDF-1.4 nothing useful", "application/pdf")})
+    assert junk.status_code == 422

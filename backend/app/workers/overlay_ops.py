@@ -113,8 +113,8 @@ def _draw(c, item: dict, height: float) -> None:
         for x, y in rest:
             p.lineTo(x, height - y)
         c.drawPath(p, stroke=1, fill=0)
-    elif kind == "link":
-        pass  # added as an annotation after the overlay is merged
+    elif kind in ("link", "field"):
+        pass  # added as annotations after the overlay is merged
     elif kind == "image":
         c.drawImage(_image(item["data"]), item["x"], height - item["y"] - item["h"], item["w"], item["h"], mask="auto")
     else:
@@ -135,6 +135,74 @@ def _placement(page):
     if rotation == 270:
         return h, w, (0, -1, 1, 0, x0, y1)
     return w, h, (1, 0, 0, 1, x0, y0)
+
+
+def _add_fields(writer, specs, taken) -> None:
+    """Create AcroForm text fields and check boxes. specs: [(page_index, (x0, y0, x1, y1), item)]."""
+    from pypdf.generic import (ArrayObject, BooleanObject, DecodedStreamObject, DictionaryObject, FloatObject, NameObject,
+                               NumberObject, TextStringObject)
+
+    def name(value):
+        return NameObject(value)
+
+    def font(base):
+        return writer._add_object(DictionaryObject({name("/Type"): name("/Font"), name("/Subtype"): name("/Type1"),
+                                                    name("/BaseFont"): name(base)}))
+
+    root = writer._root_object
+    if "/AcroForm" not in root:
+        root[name("/AcroForm")] = writer._add_object(DictionaryObject())
+    form = root["/AcroForm"].get_object()
+    if "/Fields" not in form:
+        form[name("/Fields")] = ArrayObject()
+    if "/DR" not in form:
+        form[name("/DR")] = DictionaryObject()
+    resources = form["/DR"].get_object()
+    if "/Font" not in resources:
+        resources[name("/Font")] = DictionaryObject()
+    fonts = resources["/Font"].get_object()
+    if "/Helv" not in fonts:
+        fonts[name("/Helv")] = font("/Helvetica")
+    if "/ZaDb" not in fonts:
+        fonts[name("/ZaDb")] = font("/ZapfDingbats")
+    if "/DA" not in form:
+        form[name("/DA")] = TextStringObject("/Helv 0 Tf 0 g")
+    form[name("/NeedAppearances")] = BooleanObject(True)
+
+    for page_index, rect, item in specs:
+        label, n = item["name"], 2
+        while label in taken:                       # field names must be unique in a document
+            label, n = f"{item['name']} {n}", n + 1
+        taken.add(label)
+        w, h = rect[2] - rect[0], rect[3] - rect[1]
+        widget = DictionaryObject({
+            name("/Type"): name("/Annot"), name("/Subtype"): name("/Widget"), name("/T"): TextStringObject(label),
+            name("/Rect"): ArrayObject(FloatObject(round(v, 2)) for v in rect), name("/F"): NumberObject(4),
+            name("/MK"): DictionaryObject({name("/BC"): ArrayObject(FloatObject(v) for v in (0.45, 0.45, 0.5))}),
+            name("/BS"): DictionaryObject({name("/W"): NumberObject(1), name("/S"): name("/S")}),
+        })
+        if item["field"] == "checkbox":
+            def appearance(content: str):
+                stream = DecodedStreamObject()
+                stream.set_data(content.encode("latin-1"))
+                stream.update({name("/Type"): name("/XObject"), name("/Subtype"): name("/Form"),
+                               name("/BBox"): ArrayObject(FloatObject(v) for v in (0, 0, round(w, 2), round(h, 2))),
+                               name("/Resources"): DictionaryObject({name("/Font"): DictionaryObject({name("/ZaDb"): fonts["/ZaDb"]})})})
+                return writer._add_object(stream)
+
+            size = min(w, h) * 0.8
+            tick = f"q BT /ZaDb {size:.2f} Tf 0 g {(w - size * 0.76) / 2:.2f} {(h - size * 0.7) / 2:.2f} Td (4) Tj ET Q"
+            widget.update({name("/FT"): name("/Btn"), name("/V"): name("/Off"), name("/AS"): name("/Off"),
+                           name("/DA"): TextStringObject("/ZaDb 0 Tf 0 g"),
+                           name("/AP"): DictionaryObject({name("/N"): DictionaryObject({name("/Yes"): appearance(tick),
+                                                                                         name("/Off"): appearance("")})})})
+            widget["/MK"][name("/CA")] = TextStringObject("4")
+        else:
+            flags = 4096 if item["field"] == "multiline" else 0
+            widget.update({name("/FT"): name("/Tx"), name("/V"): TextStringObject(""), name("/Ff"): NumberObject(flags),
+                           name("/DA"): TextStringObject(f"/Helv {0 if flags else min(12, max(6, round(h * 0.6)))} Tf 0 g")})
+        added = writer.add_annotation(page_number=page_index, annotation=widget)
+        form["/Fields"].append(added.indirect_reference)
 
 
 def apply(src_path: str, out_path: str, spec: dict) -> dict:
@@ -177,18 +245,24 @@ def apply(src_path: str, out_path: str, spec: dict) -> dict:
         overlay = PdfReader(io.BytesIO(buf.getvalue()))
         from pypdf.annotations import Link
 
+        new_fields = []
         for i, n in enumerate(order):
-            if any(item["type"] != "link" for item in by_page[n]):
+            if any(item["type"] not in ("link", "field") for item in by_page[n]):
                 writer.pages[n - 1].merge_transformed_page(overlay.pages[i], Transformation(placements[n]), over=True)
             a, b, cc, d, e, f = placements[n]
             height = heights[n]
             for item in by_page[n]:
-                if item["type"] != "link":
+                if item["type"] not in ("link", "field"):
                     continue
                 corners = [(item["x"], height - item["y"]), (item["x"] + item["w"], height - item["y"] - item["h"])]
                 pts = [(a * u + cc * v + e, b * u + d * v + f) for u, v in corners]
                 rect = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+                if item["type"] == "field":
+                    new_fields.append((n - 1, rect, item))
+                    continue
                 writer.add_annotation(page_number=n - 1, annotation=Link(rect=rect, url=item["url"], border=[0, 0, 0]))
+        if new_fields:
+            _add_fields(writer, new_fields, set((reader.get_fields() or {}).keys()))
         with open(out_path, "wb") as f:
             writer.write(f)
         return {"ok": True, "page_count": count, "items": len(spec["items"])}

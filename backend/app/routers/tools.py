@@ -19,8 +19,9 @@ from ..database import get_db
 from ..errors import ApiError
 from ..models import Document, DocumentVersion, User
 from ..schemas.document import DocumentOut
-from ..schemas.tools import (CompressRequest, CropRequest, FormFillRequest, MergeRequest, MetadataRequest,
-                             PasswordRequest, ProtectRequest, SplitRequest, StampRequest, ToImagesRequest,
+from ..schemas.tools import (BatesRequest, CompressRequest, CropRequest, FormFillRequest, GrayscaleRequest, MergeRequest,
+                             MetadataRequest, MixRequest, NupRequest, PasswordRequest, ProtectRequest,
+                             RemoveAnnotationsRequest, ResizeRequest, SplitRequest, StampRequest, ToImagesRequest,
                              WatermarkRequest, _Doc)
 from ..security.deps import client_ip, get_current_user
 from ..services import audit, storage, versions
@@ -148,7 +149,9 @@ def merge(body: MergeRequest, request: Request, db: Session = Depends(get_db), u
 def split(body: SplitRequest, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     doc = get_owned_document(body.document_id, db, user)
     src, count = _source(doc), doc.page_count
-    if body.mode == "every":
+    if body.mode == "bookmarks":
+        groups = [[i + 1 for i in g] for g in _run("bookmark_groups", {"inputs": [str(src)]})["groups"]]
+    elif body.mode == "every":
         groups = [list(range(i, min(i + body.every - 1, count) + 1)) for i in range(1, count + 1, body.every)]
     else:
         parts = [p for p in body.ranges.split(",") if p.strip()]
@@ -314,6 +317,109 @@ def watermark(body: WatermarkRequest, request: Request, db: Session = Depends(ge
               "size": body.size, "color": body.color, "font": "helvetica", "bold": True, "align": "center",
               "rotate": body.angle, "opacity": body.opacity} for n in pages]
     return _overlay(db, user, request, doc, items, f"Added a watermark to {len(pages)} page(s)", "tools.watermark")
+
+
+@router.post("/bates", response_model=DocumentOut)
+def bates(body: BatesRequest, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    doc = get_owned_document(body.document_id, db, user)
+    sizes = _sizes(doc)
+    pages = _pages(body.pages, len(sizes))
+    vertical, _, horizontal = body.position.partition("-")
+    margin, items = 24, []
+    for offset, n in enumerate(pages):
+        width, height = sizes[n - 1]
+        x = {"left": margin, "center": width / 2, "right": width - margin}[horizontal]
+        y = margin if vertical == "top" else height - margin - 1.2 * body.size
+        items.append({"type": "text", "page": n, "x": x, "y": y, "text": f"{body.prefix}{body.start + offset:0{body.digits}d}",
+                      "size": body.size, "color": "#000000", "font": "courier", "align": horizontal})
+    return _overlay(db, user, request, doc, items, f"Added Bates numbers to {len(pages)} page(s)", "tools.bates")
+
+
+@router.post("/resize", response_model=DocumentOut)
+def resize(body: ResizeRequest, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    doc = get_owned_document(body.document_id, db, user)
+    src, out = _source(doc), _tmp("out")
+    result = _run("resize", {"inputs": [str(src)], "out": str(out), "size": body.size})
+    return _new_version(db, user, request, doc, out, result["page_count"], f"Resized pages to {body.size.upper()}", "tools.resize")
+
+
+@router.post("/flatten", response_model=DocumentOut)
+def flatten(body: _Doc, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    doc = get_owned_document(body.document_id, db, user)
+    src, out = _source(doc), _tmp("out")
+    result = _run("flatten", {"inputs": [str(src)], "out": str(out)})
+    return _new_version(db, user, request, doc, out, result["page_count"], "Flattened form fields and annotations", "tools.flatten")
+
+
+@router.post("/remove-annotations", response_model=DocumentOut)
+def remove_annotations(body: RemoveAnnotationsRequest, request: Request, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    doc = get_owned_document(body.document_id, db, user)
+    src, out = _source(doc), _tmp("out")
+    try:
+        result = _run("remove_annotations", {"inputs": [str(src)], "out": str(out), "what": body.what})
+    except Exception:
+        out.unlink(missing_ok=True)
+        raise
+    return _new_version(db, user, request, doc, out, result["page_count"], f"Removed {result['removed']} annotation(s)",
+                        "tools.remove_annotations")
+
+
+@router.post("/nup", response_model=DocumentOut, status_code=201)
+def nup(body: NupRequest, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    doc = get_owned_document(body.document_id, db, user)
+    out = _tmp("out")
+    _run("nup", {"inputs": [str(_source(doc))], "out": str(out), "per_sheet": body.per_sheet})
+    return _new_document(db, user, request, out, f"{_stem(doc)} ({body.per_sheet}-up).pdf",
+                         f"{body.per_sheet} pages per sheet from {doc.original_filename}", "tools.nup")
+
+
+@router.post("/grayscale", response_model=DocumentOut, status_code=201)
+def grayscale(body: GrayscaleRequest, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    doc = get_owned_document(body.document_id, db, user)
+    out = _tmp("out")
+    _run("grayscale", {"inputs": [str(_source(doc))], "out": str(out), "dpi": body.dpi, "max_pages": MAX_IMAGE_PAGES})
+    return _new_document(db, user, request, out, f"{_stem(doc)} (grayscale).pdf", f"Grayscale copy of {doc.original_filename}",
+                         "tools.grayscale")
+
+
+@router.post("/mix", response_model=DocumentOut, status_code=201)
+def mix(body: MixRequest, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    docs = [get_owned_document(i, db, user) for i in body.document_ids]
+    out = _tmp("out")
+    _run("mix", {"inputs": [str(_source(d)) for d in docs], "out": str(out), "max_pages": get_settings().max_pages})
+    return _new_document(db, user, request, out, body.name, "Pages alternated from two documents", "tools.mix")
+
+
+@router.post("/repair", response_model=DocumentOut, status_code=201)
+def repair(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Upload a PDF that the normal upload rejects as damaged; it is rebuilt and stored if that succeeds."""
+    s = get_settings()
+    tmp, _ = storage.save_upload_to_temp(file.file, s.max_upload_bytes)
+    out = _tmp("out")
+    try:
+        _run("repair", {"inputs": [str(tmp)], "out": str(out)})
+    except Exception:
+        out.unlink(missing_ok=True)
+        raise
+    finally:
+        tmp.unlink(missing_ok=True)
+    name = PurePosixPath(storage.sanitize_filename(file.filename)).stem[:180]
+    return _new_document(db, user, request, out, f"{name} (repaired).pdf", "Rebuilt from a damaged upload", "tools.repair")
+
+
+@router.post("/extract-images")
+def extract_images(body: _Doc, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    doc = get_owned_document(body.document_id, db, user)
+    out = _tmp("zip")
+    try:
+        _run("extract_images", {"inputs": [str(_source(doc))], "out": str(out)})
+    except Exception:
+        out.unlink(missing_ok=True)
+        raise
+    audit.record(db, "tools.extract_images", user.id, doc.id, client_ip(request))
+    db.commit()
+    return _download(out, f"{_stem(doc)} (images).zip", "application/zip")
 
 
 # ---------- forms ----------

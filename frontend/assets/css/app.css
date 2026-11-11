@@ -137,6 +137,8 @@ body { color: var(--ink); background: var(--bg); font-family: system-ui, -apple-
   line-height: 1.2; white-space: pre; overflow: hidden; resize: none; min-width: 1em; z-index: 5; }
 .sign-dialog { width: min(94vw, 560px); }
 .edit-link { fill: rgba(37, 99, 235, .12); stroke: #2563eb; }
+.edit-field { fill: rgba(22, 163, 74, .12); stroke: #15803d; }
+.edit-field-label { fill: #166534; font-family: system-ui, sans-serif; pointer-events: none; }
 .form-dialog { width: min(94vw, 520px); }
 .form-fields { max-height: 55vh; overflow-y: auto; display: grid; gap: .65rem; padding-right: .25rem; }
 .form-row.check { display: flex; gap: .5rem; align-items: center; }

@@ -111,6 +111,11 @@ export function createEditTools(ctx) {
       tip.textContent = item.url || "Link";
       area.append(tip);
       g.append(area);
+    } else if (item.type === "field") {
+      g.append(svg("rect", { class: "edit-field", x: item.x, y: item.y, width: item.w, height: item.h, "stroke-width": 1 / pxPerPt() }));
+      const label = svg("text", { class: "edit-field-label", x: item.x + 2, y: item.y + Math.min(item.h * 0.75, 9), "font-size": Math.min(8, item.h * 0.7) });
+      label.textContent = item.field === "checkbox" ? "" : item.name;
+      g.append(label);
     } else if (item.type === "image") {
       g.append(svg("image", { href: item.data, x: item.x, y: item.y, width: item.w, height: item.h, preserveAspectRatio: "none" }));
     }
@@ -247,6 +252,7 @@ export function createEditTools(ctx) {
       case "rect": case "ellipse": return { ...base, type: tool, x: pt.x, y: pt.y, w: 0, h: 0, fill: prop.fill(), stroke: prop.color(), stroke_width: prop.width(), opacity: 1 };
       case "line": case "arrow": return { ...base, type: "line", x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y, color: prop.color(), width: prop.width(), arrow: tool === "arrow" };
       case "link": return { ...base, type: "link", x: pt.x, y: pt.y, w: 0, h: 0, url: "" };
+      case "field": return { ...base, type: "field", x: pt.x, y: pt.y, w: 0, h: 0, field: "text", name: "" };
       case "pen": return { ...base, type: "ink", points: [[pt.x, pt.y]], color: prop.color(), width: prop.width() };
       default: return null;
     }
@@ -339,6 +345,7 @@ export function createEditTools(ctx) {
     changed();
     if (!STICKY_TOOLS.has(tool)) { setTool("select"); select(item.id); }
     if (item.type === "link") askLink(item, true);
+    if (item.type === "field") askField(item, true);
   }
 
   // ---------- text box ----------
@@ -415,6 +422,34 @@ export function createEditTools(ctx) {
         return;
       }
       item.url = url;
+      renderPage(item.page);
+      changed();
+    });
+  }
+
+  // ---------- new form fields ----------
+  let naming = null;
+  function askField(item, isNew) {
+    naming = { item, isNew };
+    $("field-name").value = item.name || `Field ${items.filter((i) => i.type === "field").length}`;
+    $("field-type").value = isNew && item.w < 30 && item.h < 30 ? "checkbox" : item.field; // a small square is probably a check box
+    $("field-dialog").returnValue = "cancel";
+    $("field-dialog").showModal();
+    $("field-name").select();
+  }
+  function setUpFields() {
+    $("field-dialog").addEventListener("close", () => {
+      if (!naming) return;
+      const { item, isNew } = naming;
+      naming = null;
+      const name = $("field-name").value.trim().replace(/\s+/g, " ");
+      if ($("field-dialog").returnValue !== "ok") { if (isNew) remove(item.id); return; }
+      if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,59}$/.test(name)) {
+        toast("Field names can use letters, numbers, spaces, - and _ (up to 60 characters)");
+        if (isNew) remove(item.id);
+        return;
+      }
+      Object.assign(item, { name, field: $("field-type").value });
       renderPage(item.page);
       changed();
     });
@@ -622,6 +657,7 @@ export function createEditTools(ctx) {
     const item = enabled && tool === "select" ? find(e.target.closest("[data-id]")?.dataset.id) : null;
     if (item?.type === "text") openEditor(item.page, item);
     else if (item?.type === "link") askLink(item, false);
+    else if (item?.type === "field") askField(item, false);
   });
   for (const b of document.querySelectorAll("#edit-tools button")) b.addEventListener("click", () => setTool(b.dataset.tool));
   for (const id of ["edit-color", "edit-size", "edit-width", "edit-font", "edit-fill"]) $(id).addEventListener("input", applyProps);
@@ -634,6 +670,7 @@ export function createEditTools(ctx) {
   setUpSignaturePad();
   setUpReplace();
   setUpLinks();
+  setUpFields();
   document.addEventListener("keydown", (e) => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); if (items.length) { closeEditor(true); ctx.save(); } }

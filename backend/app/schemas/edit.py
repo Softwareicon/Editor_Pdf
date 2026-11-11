@@ -132,7 +132,18 @@ class LinkItem(_Item):
         return value
 
 
-EditItem = Annotated[Union[TextItem, ShapeItem, LineItem, InkItem, ImageItem, LinkItem], Field(discriminator="type")]
+class FieldItem(_Item):
+    """A new fillable form field."""
+    type: Literal["field"]
+    x: Coord
+    y: Coord
+    w: Extent
+    h: Extent
+    field: Literal["text", "multiline", "checkbox"] = "text"
+    name: str = Field(min_length=1, max_length=60, pattern=r"^[A-Za-z0-9][A-Za-z0-9 _-]*$")
+
+
+EditItem = Annotated[Union[TextItem, ShapeItem, LineItem, InkItem, ImageItem, LinkItem, FieldItem], Field(discriminator="type")]
 
 
 class ApplyEditsRequest(BaseModel):

@@ -22,7 +22,7 @@ const TOOLS = [
     run: async (v) => opened(await post("merge", v), "Merged into a new document.") },
   { id: "split", title: "Split PDF", desc: "Cut a PDF into several documents.",
     fields: [{ name: "document_id", type: "doc" },
-             { name: "mode", label: "How", type: "select", options: [["ranges", "By page groups"], ["every", "Every N pages"]] },
+             { name: "mode", label: "How", type: "select", options: [["ranges", "By page groups"], ["every", "Every N pages"], ["bookmarks", "At each top-level bookmark"]] },
              { name: "ranges", label: "Page groups, one new file each (e.g. 1-3, 4-6, 9)", type: "text", value: "" },
              { name: "every", label: "N (used with “Every N pages”)", type: "number", value: 1, min: 1 }],
     run: async (v) => { const r = await post("split", v); return { text: `Created ${r.documents.length} documents.`, docs: r.documents }; } },
@@ -80,6 +80,37 @@ const TOOLS = [
   { id: "unlock", title: "Unlock PDF", desc: "Make a copy without the password. You must know the document's password; it is never guessed.",
     fields: [{ name: "document_id", type: "doc", encrypted: true }, { name: "password", label: "The document's password", type: "password" }],
     run: async (v) => opened(await post("unlock", v), "Created an unlocked copy.") },
+  { id: "bates", title: "Bates numbering", desc: "Stamp a running number with a prefix on every page (legal document numbering).",
+    fields: [{ name: "document_id", type: "doc" }, { name: "prefix", label: "Prefix", type: "text", value: "DOC-" },
+             { name: "start", label: "First number", type: "number", value: 1, min: 0 }, { name: "digits", label: "Digits", type: "number", value: 6, min: 1, max: 12 },
+             { name: "position", label: "Position", type: "select", options: [["bottom-right", "Bottom right"], ...POSITIONS.filter(([v]) => v !== "bottom-right")] }, PAGES],
+    run: async (v) => opened(await post("bates", v), "Bates numbers added.") },
+  { id: "nup", title: "N-up (pages per sheet)", desc: "Make a copy with 2 or 4 pages printed on each sheet.",
+    fields: [{ name: "document_id", type: "doc" }, { name: "per_sheet", label: "Pages per sheet", type: "select", options: [["2", "2"], ["4", "4"]] }],
+    run: async (v) => opened(await post("nup", { ...v, per_sheet: Number(v.per_sheet) }), "Created a new document.") },
+  { id: "resize", title: "Resize pages", desc: "Scale every page to a standard paper size. Links and form fields are not kept.",
+    fields: [{ name: "document_id", type: "doc" }, { name: "size", label: "Paper size", type: "select", options: [["a4", "A4"], ["letter", "Letter"], ["legal", "Legal"], ["a3", "A3"], ["a5", "A5"]] }],
+    run: async (v) => opened(await post("resize", v), "Pages resized.") },
+  { id: "mix", title: "Alternate & mix", desc: "Interleave the pages of two PDFs: 1st of A, 1st of B, 2nd of A… (e.g. front and back scans).",
+    fields: [{ name: "document_ids", type: "docs", exactly: 2 }, { name: "name", label: "Name of the new file", type: "text", value: "Mixed" }],
+    run: async (v) => opened(await post("mix", v), "Created a new document.") },
+  { id: "grayscale", title: "Grayscale PDF", desc: "Make a black-and-white copy. Pages become pictures, so text can no longer be selected (up to 100 pages).",
+    fields: [{ name: "document_id", type: "doc" }, { name: "dpi", label: "Quality", type: "select", options: [["150", "Normal (150 dpi)"], ["100", "Small file (100 dpi)"], ["200", "Sharp (200 dpi)"]] }],
+    run: async (v) => opened(await post("grayscale", { ...v, dpi: Number(v.dpi) }), "Created a grayscale copy.") },
+  { id: "flatten", title: "Flatten PDF", desc: "Make filled-in form fields and annotations a fixed part of the pages so they cannot be changed.",
+    fields: [{ name: "document_id", type: "doc" }], run: async (v) => opened(await post("flatten", v), "Document flattened.") },
+  { id: "remove-annotations", title: "Delete annotations", desc: "Remove comments and mark-up, links, or every annotation (including form fields).",
+    fields: [{ name: "document_id", type: "doc" }, { name: "what", label: "Remove", type: "select", options: [["comments", "Comments, highlights and mark-up"], ["links", "Links"], ["all", "Everything (also form fields)"]] }],
+    run: async (v) => opened(await post("remove-annotations", v), "Annotations removed.") },
+  { id: "extract-images", title: "Extract images", desc: "Download the pictures stored inside a PDF (ZIP file).",
+    fields: [{ name: "document_id", type: "doc" }], run: (v) => download("extract-images", v) },
+  { id: "repair", title: "Repair PDF", desc: "Upload a PDF that will not open or is rejected as damaged; it is rebuilt if enough of it is intact.",
+    fields: [{ name: "file", label: "Damaged PDF", type: "files", accept: "application/pdf,.pdf", single: true }],
+    run: async (v) => {
+      const form = new FormData();
+      form.append("file", v.file[0]);
+      return opened(await api("/api/tools/repair", { method: "POST", body: form }), "The file was rebuilt.");
+    } },
   { id: "metadata", title: "Document properties", desc: "Set the title, author, subject and keywords stored in the PDF.",
     fields: [{ name: "document_id", type: "doc" }, ...["title", "author", "subject", "keywords"].map((k) => ({ name: k, label: k[0].toUpperCase() + k.slice(1), type: "text", value: "" }))],
     run: async (v) => opened(await post("metadata", v), "Properties saved.") },
@@ -134,9 +165,9 @@ function buildField(field) {
       row.dataset.id = d.id;
       list.append(row);
     }
-    wrap.append(el("div", { className: "form-label", textContent: "Documents (tick at least two, in order)" }), list);
+    wrap.append(el("div", { className: "form-label", textContent: field.exactly ? `Documents (tick ${field.exactly}, in order)` : "Documents (tick at least two, in order)" }), list);
   } else if (field.type === "files") {
-    input = el("input", { id, type: "file", className: "form-control", accept: field.accept, multiple: true, required: true });
+    input = el("input", { id, type: "file", className: "form-control", accept: field.accept, multiple: !field.single, required: true });
     wrap.append(el("label", { className: "form-label", htmlFor: id, textContent: field.label }), input);
   } else if (field.type === "select") {
     input = el("select", { id, className: "form-select" }, ...field.options.map(([value, text]) => el("option", { value, textContent: text })));
@@ -186,8 +217,11 @@ $("tool-form").addEventListener("submit", async (e) => {
   if (!current) return;
   const v = values();
   if (current.fields.some((f) => f.type === "doc") && !v.document_id) return toast("Choose a document first");
-  if (v.document_ids && v.document_ids.length < 2) return toast("Tick at least two documents");
+  if (v.document_ids && v.document_ids.length < 2 && !current.fields.some((f) => f.exactly)) return toast("Tick at least two documents");
   if (v.files && !v.files.length) return toast("Choose at least one picture");
+  if (v.file && !v.file.length) return toast("Choose a file first");
+  const exact = current.fields.find((f) => f.exactly);
+  if (exact && v.document_ids.length !== exact.exactly) return toast(`Tick exactly ${exact.exactly} documents`);
   $("tool-run").disabled = true;
   $("tool-run").textContent = "Working…";
   try {

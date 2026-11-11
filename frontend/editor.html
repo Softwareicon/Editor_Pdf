@@ -70,6 +70,7 @@
       <button type="button" data-tool="line" title="Draw a straight line">Line</button>
       <button type="button" data-tool="arrow" title="Draw an arrow">Arrow</button>
       <button type="button" data-tool="link" title="Drag a box that opens a web address when clicked">Link</button>
+      <button type="button" data-tool="field" title="Drag a box to add a fillable form field (text box or check box)">Form field</button>
       <button type="button" data-tool="tick" title="Click to place a check mark (for forms)" aria-label="Check mark">&#10003;</button>
       <button type="button" data-tool="cross" title="Click to place a cross (for forms)" aria-label="Cross">&#10007;</button>
     </div>
@@ -173,6 +174,25 @@
       <div class="d-flex justify-content-end gap-2">
         <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
         <button class="btn btn-brand" value="ok">Set link</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="field-dialog" class="pm-dialog">
+    <form method="dialog">
+      <h2 class="h5">New form field</h2>
+      <p class="text-secondary small">Anyone who opens the saved PDF can fill this field in.</p>
+      <label class="form-label" for="field-name">Field name</label>
+      <input id="field-name" class="form-control mb-2" type="text" maxlength="60" autocomplete="off">
+      <label class="form-label" for="field-type">Type</label>
+      <select id="field-type" class="form-select mb-4">
+        <option value="text">Text (one line)</option>
+        <option value="multiline">Text (several lines)</option>
+        <option value="checkbox">Check box</option>
+      </select>
+      <div class="d-flex justify-content-end gap-2">
+        <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn btn-brand" value="ok">Add field</button>
       </div>
     </form>
   </dialog>

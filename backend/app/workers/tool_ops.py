@@ -276,8 +276,196 @@ def form_fill(req):
     return {"page_count": len(writer.pages), "filled": len(values)}
 
 
+def _upright(page):
+    """Bake the page's rotation into its content and return (left, bottom, width, height) of what is visible."""
+    page.transfer_rotation_to_content()
+    box = page.cropbox
+    return float(box.left), float(box.bottom), float(box.width), float(box.height)
+
+
+def nup(req):
+    from pypdf import PdfWriter, Transformation
+
+    reader = _reader(req["inputs"][0])
+    per = int(req["per_sheet"])
+    cols, rows = (2, 1) if per == 2 else (2, 2)
+    sheet_w, sheet_h = (841.89, 595.28) if per == 2 else (595.28, 841.89)
+    gap = 18
+    cell_w, cell_h = (sheet_w - gap * (cols + 1)) / cols, (sheet_h - gap * (rows + 1)) / rows
+    writer = PdfWriter()
+    sheet = None
+    for i, src in enumerate(reader.pages):
+        if i % per == 0:
+            sheet = writer.add_blank_page(width=sheet_w, height=sheet_h)
+        left, bottom, w, h = _upright(src)
+        s = min(cell_w / w, cell_h / h)
+        col, row = (i % per) % cols, (i % per) // cols
+        x = gap + col * (cell_w + gap) + (cell_w - w * s) / 2
+        y = sheet_h - gap - (row + 1) * cell_h - row * gap + (cell_h - h * s) / 2
+        sheet.merge_transformed_page(src, Transformation().translate(-left, -bottom).scale(s).translate(x, y))
+    _save(writer, req["out"])
+    return {"page_count": len(writer.pages)}
+
+
+def resize(req):
+    from pypdf import PdfWriter, Transformation
+
+    reader = _reader(req["inputs"][0])
+    short, long = {"a4": (595.28, 841.89), "letter": (612, 792), "legal": (612, 1008), "a3": (841.89, 1190.55),
+                   "a5": (419.53, 595.28)}[req["size"]]
+    writer = PdfWriter()
+    for src in reader.pages:
+        left, bottom, w, h = _upright(src)
+        tw, th = (long, short) if w > h else (short, long)     # keep each page's orientation
+        s = min(tw / w, th / h)
+        page = writer.add_blank_page(width=tw, height=th)
+        page.merge_transformed_page(src, Transformation().translate(-left, -bottom).scale(s)
+                                    .translate((tw - w * s) / 2, (th - h * s) / 2))
+    if reader.metadata:
+        writer.add_metadata({k: v for k, v in reader.metadata.items() if isinstance(v, str)})
+    _save(writer, req["out"])
+    return {"page_count": len(writer.pages)}
+
+
+def grayscale(req):
+    """Pages are redrawn as grey pictures: reliable for any content, but text is no longer selectable."""
+    import pypdfium2 as pdfium
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+
+    _reader(req["inputs"][0])
+    pdf = pdfium.PdfDocument(req["inputs"][0])
+    if len(pdf) > req["max_pages"]:
+        raise _Refused("bad_request", f"at most {req['max_pages']} pages can be converted at once")
+    c = canvas.Canvas(req["out"], pageCompression=0)
+    for i in range(len(pdf)):
+        page = pdf[i]
+        w, h = page.get_size()
+        scale = min(req["dpi"] / 72, (20_000_000 / max(w * h, 1)) ** 0.5)
+        image = page.render(scale=scale, grayscale=True).to_pil().convert("L")
+        buf = io.BytesIO()
+        image.save(buf, "JPEG", quality=85)
+        buf.seek(0)
+        c.setPageSize((w, h))
+        c.drawImage(ImageReader(buf), 0, 0, w, h)
+        c.showPage()
+        page.close()
+    c.save()
+    return {"page_count": len(pdf)}
+
+
+def flatten(req):
+    """Make form fields and annotations a fixed part of the page (they can no longer be edited)."""
+    import pypdfium2 as pdfium
+
+    _reader(req["inputs"][0])
+    pdf = pdfium.PdfDocument(req["inputs"][0])
+    pdf.init_forms()
+    count = len(pdf)
+    for i in range(count):
+        page = pdf[i]
+        page.flatten()
+        page.close()
+    pdf.save(req["out"])
+    return {"page_count": count}
+
+
+def extract_images(req):
+    reader = _reader(req["inputs"][0])
+    found = 0
+    with zipfile.ZipFile(req["out"], "w", zipfile.ZIP_STORED) as z:
+        for n, page in enumerate(reader.pages, start=1):
+            try:
+                images = list(page.images)
+            except Exception:
+                continue
+            for img in images:
+                try:
+                    data, name = img.data, str(img.name)
+                except Exception:
+                    continue
+                found += 1
+                ext = name.rsplit(".", 1)[-1].lower() if "." in name else "png"
+                z.writestr(f"page-{n:03d}-image-{found:03d}.{ext if ext.isalnum() and len(ext) <= 4 else 'png'}", data)
+                if found >= 500:
+                    return {"images": found}
+    if not found:
+        raise _Refused("bad_request", "this document contains no pictures")
+    return {"images": found}
+
+
+MARKUP = ["/Text", "/FreeText", "/Line", "/Square", "/Circle", "/Polygon", "/PolyLine", "/Highlight", "/Underline",
+          "/Squiggly", "/StrikeOut", "/Caret", "/Stamp", "/Ink", "/Popup", "/FileAttachment"]
+
+
+def remove_annotations(req):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter(clone_from=_reader(req["inputs"][0]))
+    before = sum(len(p.get("/Annots") or []) for p in writer.pages)
+    writer.remove_annotations({"all": None, "links": ["/Link"], "comments": MARKUP}[req["what"]])
+    after = sum(len(p.get("/Annots") or []) for p in writer.pages)
+    if before == after:
+        raise _Refused("bad_request", "there is nothing of that kind to remove in this document")
+    _save(writer, req["out"])
+    return {"page_count": len(writer.pages), "removed": before - after}
+
+
+def repair(req):
+    """Rebuild the file with a second, more tolerant PDF engine. Content that is really missing cannot be restored."""
+    import pypdfium2 as pdfium
+
+    try:
+        pdf = pdfium.PdfDocument(req["inputs"][0])
+        count = len(pdf)
+        if count == 0:
+            raise ValueError("no pages")
+        pdf.save(req["out"])
+    except Exception as exc:
+        if "password" in str(exc).lower():
+            raise _Refused("encrypted")
+        raise _Refused("bad_request", "this file is too damaged to rebuild")
+    return {"page_count": count}
+
+
+def mix(req):
+    from pypdf import PdfWriter
+
+    a, b = _reader(req["inputs"][0]), _reader(req["inputs"][1])
+    writer = PdfWriter()
+    for i in range(max(len(a.pages), len(b.pages))):
+        for reader in (a, b):
+            if i < len(reader.pages):
+                writer.add_page(reader.pages[i])
+    if len(writer.pages) > req["max_pages"]:
+        raise _Refused("bad_request", "the result would have too many pages")
+    _save(writer, req["out"])
+    return {"page_count": len(writer.pages)}
+
+
+def bookmark_groups(req):
+    reader = _reader(req["inputs"][0])
+    starts = set()
+    for item in reader.outline:
+        if isinstance(item, list):
+            continue                             # only top-level bookmarks start a new part
+        try:
+            n = reader.get_destination_page_number(item)
+        except Exception:
+            n = None
+        if isinstance(n, int) and n >= 0:
+            starts.add(n)
+    starts.add(0)
+    order = sorted(starts)
+    if len(order) < 2:
+        raise _Refused("bad_request", "this document has no bookmarks to split by")
+    count = len(reader.pages)
+    return {"groups": [list(range(s, e)) for s, e in zip(order, order[1:] + [count])]}
+
+
 OPERATIONS = {f.__name__: f for f in (merge, split, compress, protect, unlock, crop, metadata, images_to_pdf,
-                                      to_images, to_text, form_fields, form_fill)}
+                                      to_images, to_text, form_fields, form_fill, nup, resize, grayscale, flatten,
+                                      extract_images, remove_annotations, repair, mix, bookmark_groups)}
 
 
 def run(operation: str, req: dict) -> dict:

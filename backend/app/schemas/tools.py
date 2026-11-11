@@ -37,7 +37,7 @@ class MergeRequest(BaseModel):
 
 
 class SplitRequest(_Doc):
-    mode: Literal["ranges", "every"] = "ranges"
+    mode: Literal["ranges", "every", "bookmarks"] = "ranges"
     ranges: str = Field(default="", max_length=500, description='One new document per group, e.g. "1-3, 4-6, 9"')
     every: int = Field(default=1, ge=1, le=5000)
 
@@ -103,3 +103,33 @@ class ToImagesRequest(_Doc):
 
 class FormFillRequest(_Doc):
     values: dict[str, str | bool] = Field(min_length=1, max_length=1000)
+
+
+class BatesRequest(_Paged):
+    prefix: str = Field(default="", max_length=30)
+    start: int = Field(default=1, ge=0, le=10**9)
+    digits: int = Field(default=6, ge=1, le=12)
+    position: Literal["top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right"] = "bottom-right"
+    size: float = Field(default=9, ge=4, le=36)
+    _p = field_validator("prefix")(_printable)
+
+
+class NupRequest(_Doc):
+    per_sheet: Literal[2, 4] = 2
+
+
+class ResizeRequest(_Doc):
+    size: Literal["a3", "a4", "a5", "letter", "legal"] = "a4"
+
+
+class GrayscaleRequest(_Doc):
+    dpi: Literal[100, 150, 200] = 150
+
+
+class RemoveAnnotationsRequest(_Doc):
+    what: Literal["all", "links", "comments"] = "comments"
+
+
+class MixRequest(BaseModel):
+    document_ids: list[str] = Field(min_length=2, max_length=2)
+    name: str = Field(default="Mixed.pdf", max_length=255)
