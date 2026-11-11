@@ -46,7 +46,8 @@ def upload_document(request: Request, file: UploadFile = File(...), db: Session 
                    stored_filename=stored, file_size=size, page_count=info["page_count"],
                    mime_type="application/pdf", storage_path=rel_path,
                    processing_status="encrypted" if info["needs_password"] else "ready")
-    doc.versions.append(DocumentVersion(version_number=1, storage_path=rel_path, change_description="Original upload"))
+    doc.versions.append(DocumentVersion(version_number=1, storage_path=rel_path, change_description="Original upload",
+                                        page_count=info["page_count"], file_size=size))
     db.add(doc)
     try:
         db.flush()

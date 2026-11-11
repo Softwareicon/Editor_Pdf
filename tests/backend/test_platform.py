@@ -26,12 +26,14 @@ def test_errors_use_one_envelope(client):
     assert r.status_code == 404 and set(r.json()) == {"error"} and r.json()["error"]["code"] == "http_404"
 
 
-def test_openapi_documents_every_phase1_endpoint(client):
+def test_openapi_documents_every_endpoint(client):
     paths = client.get("/api/openapi.json").json()["paths"]
     for p in ["/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/auth/refresh",
               "/api/documents/upload", "/api/documents", "/api/documents/{document_id}",
               "/api/documents/{document_id}/download", "/api/editor/{document_id}/metadata",
-              "/api/editor/{document_id}/pages"]:
+              "/api/editor/{document_id}/pages", "/api/editor/{document_id}/versions",
+              "/api/editor/{document_id}/undo", "/api/editor/{document_id}/redo", "/api/pages/add", "/api/pages/delete",
+              "/api/pages/reorder", "/api/pages/rotate", "/api/pages/extract", "/api/pages/duplicate", "/api/pages/reverse"]:
         assert p in paths, p
 
 

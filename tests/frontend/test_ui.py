@@ -223,3 +223,100 @@ def test_one_user_cannot_open_another_users_document(page, browser, server, tmp_
     sign_up(other, "intruder@example.com")
     other.goto(href)
     expect(other.locator("#message")).to_have_text("This document does not exist or you do not have access to it.")
+
+
+def downloaded_texts(page):
+    import io
+    from pypdf import PdfReader
+    with page.expect_download() as dl:
+        page.click("#download")
+    return [p.extract_text().strip() for p in PdfReader(io.BytesIO(Path(dl.value.path()).read_bytes())).pages]
+
+
+def test_page_tools_rotate_delete_duplicate_reorder_undo_redo(page, tmp_path):
+    pdf = tmp_path / "pages.pdf"
+    pdf.write_bytes(build_pdf(["P1", "P2", "P3", "P4"]))
+    sign_up(page, "pages@example.com")
+    page.set_input_files("#file-input", str(pdf))
+    page.locator("#file-rows tr").get_by_role("link", name="Open").click()
+    expect(page.locator("#status")).to_have_text("Ready")
+    expect(page.locator("#undo")).to_be_disabled()
+    thumbs = page.locator("#thumbs .thumb")
+    saved = lambda: expect(page.locator("#status")).to_have_text("All changes saved")
+
+    # rotate page 2: it becomes landscape in the viewer
+    thumbs.nth(1).click()
+    expect(page.locator("#selection")).to_contain_text("Page 2 selected")
+    box = lambda n: page.eval_on_selector(f".page[data-page='{n}']", "e => [e.offsetWidth, e.offsetHeight]")
+    assert box(2)[0] < box(2)[1]
+    page.click("#rotate-right"); saved()
+    assert box(2)[0] > box(2)[1] and box(1)[0] < box(1)[1]
+    expect(page.locator("#page-input")).to_have_value("2")
+    page.click("#undo")
+    expect(page.locator("#status")).to_have_text("Ready")
+    assert box(2)[0] < box(2)[1]
+    expect(page.locator("#redo")).to_be_enabled()
+
+    # delete pages 2 and 3 (multi-select), then undo and redo
+    thumbs.nth(1).click()
+    thumbs.nth(2).click(modifiers=["Control"])
+    expect(page.locator("#selection")).to_have_text("2 pages selected")
+    page.click("#delete-pages"); saved()
+    expect(page.locator("#page-total")).to_have_text("2")
+    expect(thumbs).to_have_count(2)
+    assert downloaded_texts(page) == ["P1", "P4"]
+    page.click("#undo")
+    expect(page.locator("#page-total")).to_have_text("4")
+    page.click("#redo"); saved()
+    expect(page.locator("#page-total")).to_have_text("2")
+    page.click("#undo")
+    expect(page.locator("#page-total")).to_have_text("4")
+
+    # duplicate page 1, add a blank page after it
+    thumbs.nth(0).click()
+    page.click("#duplicate"); saved()
+    expect(page.locator("#page-total")).to_have_text("5")
+    page.click("#add-blank"); saved()
+    assert downloaded_texts(page) == ["P1", "", "P1", "P2", "P3", "P4"]
+    page.click("#undo"); page.click("#undo")
+    expect(page.locator("#page-total")).to_have_text("4")
+
+    # drag the first thumbnail below the third
+    a, b = thumbs.nth(0).bounding_box(), thumbs.nth(2).bounding_box()
+    page.mouse.move(a["x"] + a["width"] / 2, a["y"] + a["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(a["x"] + a["width"] / 2, a["y"] + a["height"] / 2 + 20, steps=4)
+    page.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] * 0.8, steps=12)
+    page.mouse.up()
+    saved()
+    assert downloaded_texts(page) == ["P2", "P3", "P1", "P4"]
+
+    page.click("#reverse"); saved()
+    assert downloaded_texts(page) == ["P4", "P1", "P3", "P2"]
+
+    # extract leaves this document alone and offers the new one
+    thumbs.nth(0).click()
+    page.click("#extract")
+    expect(page.locator(".pm-toast-ok")).to_contain_text('Created "pages (extract).pdf".')
+    expect(page.locator("#page-total")).to_have_text("4")
+    page.locator(".pm-toast-ok a").click()
+    expect(page.locator("#page-total")).to_have_text("1")
+    assert downloaded_texts(page) == ["P4"]
+    if os.environ.get("PDFMASTER_SCREENSHOT_DIR"):
+        page.go_back(); saved()
+        page.locator("#thumbs .thumb").nth(1).click()
+        page.screenshot(path=os.path.join(os.environ["PDFMASTER_SCREENSHOT_DIR"], "pages.png"))
+    assert page.problems == [], page.problems
+
+
+def test_page_tools_are_disabled_for_password_protected_pdfs(page, tmp_path):
+    pdf = tmp_path / "locked.pdf"
+    pdf.write_bytes(build_encrypted_pdf("open-sesame"))
+    sign_up(page, "locked2@example.com")
+    page.set_input_files("#file-input", str(pdf))
+    page.locator("#file-rows tr").get_by_role("link", name="Open").click()
+    page.fill("#pdf-password", "open-sesame"); page.click("#password-form button[value=ok]")
+    expect(page.locator("#status")).to_have_text("Ready")
+    expect(page.locator("#selection")).to_have_text("Password-protected PDFs cannot be edited yet")
+    for button in ("#rotate-left", "#delete-pages", "#duplicate", "#add-blank", "#reverse", "#extract", "#undo"):
+        expect(page.locator(button)).to_be_disabled()

@@ -50,11 +50,21 @@ class Document(Base):
     mime_type: Mapped[str] = mapped_column(String(100), default="application/pdf")
     storage_path: Mapped[str] = mapped_column(String(500))  # relative to the storage root
     processing_status: Mapped[str] = mapped_column(String(20), default="ready")  # ready | encrypted
+    current_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # undo/redo pointer
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)
 
     owner: Mapped[User] = relationship(back_populates="documents")
-    versions: Mapped[list["DocumentVersion"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    versions: Mapped[list["DocumentVersion"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", order_by="DocumentVersion.version_number")
+
+    @property
+    def can_undo(self) -> bool:
+        return any(v.version_number < self.current_version for v in self.versions)
+
+    @property
+    def can_redo(self) -> bool:
+        return any(v.version_number > self.current_version for v in self.versions)
 
 
 class DocumentVersion(Base):
@@ -65,6 +75,8 @@ class DocumentVersion(Base):
     version_number: Mapped[int] = mapped_column(Integer)
     storage_path: Mapped[str] = mapped_column(String(500))
     change_description: Mapped[str] = mapped_column(String(500), default="")
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
 
     document: Mapped[Document] = relationship(back_populates="versions")

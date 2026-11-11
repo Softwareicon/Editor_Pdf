@@ -2,7 +2,7 @@
 
 This document is the planning deliverable required before implementation (architecture, structure,
 database, API, roadmap, dependencies). Phase 1 is implemented and tested; later phases are designed
-here but **not built yet** — see `CHECKLIST.md` for the exact state.
+here but **not built yet** (Phase 2 is partly done) — see `CHECKLIST.md` for the exact state.
 
 ## A. Architecture
 
@@ -52,6 +52,25 @@ four categories a selected block falls into.
 
 Redaction (Phase 4) uses the same content-stream machinery: the selected operators and image pixels
 are removed from the file, then the result is re-scanned to prove the text is no longer extractable.
+
+### Saving model
+
+There is no Save button: each edit is applied by the server to the real file and stored as a new
+version immediately. Undo and redo move a pointer between versions, so they also work after closing
+the browser. The spec's `POST /api/editor/{id}/save` is therefore not needed.
+
+### Text editing engine: open decision
+
+The plan was to do text editing in Java with PDFBox. The environment this project is being built in
+cannot reach Maven Central, so Java code cannot be compiled or tested there, and untested code is not
+shipped. Two ways forward:
+
+1. **Python engine with pikepdf (MPL-2.0, qpdf underneath).** It parses and rewrites content streams,
+   so native-text editing, image replacement and annotations can be built and tested now. Font
+   subsetting and glyph-coverage checks need fontTools (MIT).
+2. **Java/PDFBox as specified**, written and tested on a machine with Maven access.
+
+Page management already uses pypdf and needs no Java.
 
 ### Why two languages
 
@@ -117,8 +136,9 @@ Errors always look like `{"error": {"code": "...", "message": "...", "details": 
 | Documents | `POST /api/documents/upload`; `GET /api/documents`; `GET/DELETE /api/documents/{id}`; `GET /api/documents/{id}/download` | 1 | done |
 | Viewer | `GET /api/editor/{id}/metadata`, `GET /api/editor/{id}/pages` | 1 | done |
 | System | `GET /api/health` | 1 | done |
-| Editor | `POST/PUT/DELETE /api/editor/{id}/text…`, `POST …/images`, `POST …/annotations`, `POST …/save` | 2 | planned |
-| Pages | `POST /api/pages/add · delete · reorder · rotate · extract` | 2 | planned |
+| Editor | `POST/PUT/DELETE /api/editor/{id}/text…`, `POST …/images`, `POST …/annotations` | 2 | planned |
+| Pages | `POST /api/pages/add · delete · reorder · rotate · extract · duplicate · reverse` | 2 | done |
+| History | `GET /api/editor/{id}/versions`; `POST /api/editor/{id}/undo`, `/redo` | 2 | done |
 | Tools | `POST /api/merge`, `/api/split`, `/api/compress`, `/api/convert/*` | 3 | planned |
 | Security | `POST /api/security/protect`, `/unlock`; `GET /api/security/inspect` | 3 | planned |
 | Jobs | `GET /api/jobs/{id}`, `GET /api/jobs/{id}/download` | 3 | planned |
@@ -134,7 +154,7 @@ an `X-Requested-With` header (CSRF defence), and CORS only admits allow-listed o
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | 1 Foundation | structure, DB, auth, dashboard, upload/download, viewer | **Complete** — see `VERIFICATION_PHASE1.md` |
-| 2 Core editing | Java engine; text/image editing; page management; annotations; undo/redo; versions | integration test: edit text → save → reopen → extracted text and rendering match |
+| 2 Core editing | page management, versions, undo/redo (**done**); text/image editing, annotations (pending) | integration test: edit text → reopen → extracted text and rendering match |
 | 3 Tools | Redis queue + workers; merge, split, compression, conversions, protect/unlock with credentials | each tool round-trips sample files; job polling works; interrupted jobs recover |
 | 4 Advanced | OCR (eng + hin), certificate signatures, true redaction, metadata, repair, batch, forms | redaction test proves text is unrecoverable; signature validates in a third-party reader |
 | 5 Quality | load tests, fuzzing with malformed PDFs, container sandboxing, browser matrix, admin dashboard | security checklist signed off |
@@ -157,6 +177,7 @@ In use now (Phase 1):
 | cryptography | Apache-2.0 / BSD | AES for encrypted PDFs |
 | PDF.js (vendored 4.10.38) | Apache-2.0 | rendering |
 | Bootstrap (vendored 5.3.8, CSS only) | MIT | base styles |
+| SortableJS (vendored 1.15.7) | MIT | drag-to-reorder thumbnails |
 
 Planned, with licence decisions:
 

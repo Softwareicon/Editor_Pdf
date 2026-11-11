@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     inspect_timeout_seconds: int = 30
     inspect_memory_limit_mb: int = 1024
     temp_max_age_hours: int = 6
+    max_versions: int = 50  # per document; the oldest are dropped beyond this
 
     @model_validator(mode="after")
     def _check_secret(self) -> "Settings":

@@ -136,4 +136,5 @@ export function toast(message, kind = "error") {
   const el = Object.assign(document.createElement("div"), { className: `pm-toast pm-toast-${kind}`, textContent: message });
   host.append(el);
   setTimeout(() => el.remove(), kind === "error" ? 7000 : 3500);
+  return el;
 }

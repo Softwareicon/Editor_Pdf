@@ -20,15 +20,27 @@ unfinished features have no buttons or endpoints.
 - [x] Docker image + compose file, CI workflow, Windows setup/start scripts, README
 - [x] Tests: 26 backend (pytest), 5 browser (Playwright)
 
-## Phase 2 — Core editing
-- [ ] Java engine (PDFBox) service + JUnit tests
+## Phase 2 — Core editing (in progress)
+
+Part A — page management and history (complete)
+- [x] Pages: delete, rotate, reorder (drag thumbnails), reverse, duplicate, add blank, extract to a new document
+- [x] Versions: every edit is stored as a new `document_versions` row; version list endpoint; history capped at 50
+- [x] Undo / redo (buttons and Ctrl+Z / Ctrl+Y); a new edit after undo discards the undone versions and their files
+- [x] Edits run in the sandboxed worker; page content is copied, never re-rendered
+- [x] Encrypted PDFs (including owner-password-only) are refused rather than silently decrypted
+- [x] Tests: 10 more backend tests (36 total), 2 more browser tests (7 total); upgrade of a Phase 1 database verified on PostgreSQL
+
+Part B — not started
+- [ ] **Java engine (PDFBox).** Blocked in the build environment: Maven Central was unreachable, so the
+      engine could not be compiled or tested there. Page management therefore uses pypdf (BSD), which
+      handles it well. See "Text editing engine" in ARCHITECTURE.md for the decision this forces.
 - [ ] Text: select / modify / delete / insert, font, size, colour, weight, alignment, move, rotate
 - [ ] Content-type detection (native / scanned / outlined / flattened) surfaced in the UI
 - [ ] Images: insert, replace, delete, resize, crop, rotate, move, opacity
-- [ ] Pages: add blank, delete, duplicate, reorder, rotate, extract, insert from PDF, replace, reverse, resize, crop
+- [ ] Pages still missing: insert pages from another PDF, replace pages, resize page, crop page
 - [ ] Annotations: highlight, underline, strikethrough, freehand, comments, sticky notes, shapes, arrows, stamps
 - [ ] Drawn / typed / image signatures (visual only — labelled as such)
-- [ ] Undo / redo, Save (new `document_versions` row), right-hand properties panel, layer list
+- [ ] Right-hand properties panel, layer list
 
 ## Phase 3 — PDF tools
 - [ ] Redis job queue + worker, `/api/jobs`, progress polling

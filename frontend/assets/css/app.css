@@ -55,7 +55,7 @@ body { color: var(--ink); background: var(--bg); font-family: system-ui, -apple-
 .pm-toast-ok { border-left-color: #2e9e5b; }
 
 /* ---- viewer ---- */
-.editor-page { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; background: #dfe2e8; }
+.editor-page { height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; background: #dfe2e8; }
 .toolbar { background: var(--ink); color: #fff; display: flex; align-items: center; gap: .9rem; padding: .45rem .9rem; flex-wrap: wrap; }
 .toolbar .brand { color: #fff; }
 .doc-name { font-weight: 600; font-size: .92rem; max-width: 22vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -70,6 +70,18 @@ body { color: var(--ink); background: var(--bg); font-family: system-ui, -apple-
 .zoom-label { min-width: 3.2rem; text-align: center; font-size: .86rem; font-variant-numeric: tabular-nums; }
 .search input { background: #fff; border: 0; border-radius: 6px; padding: .3rem .6rem; font-size: .86rem; width: 200px; }
 .search-count { font-size: .8rem; color: #c3c9d6; min-width: 4.5rem; }
+
+.pagebar { background: #fff; border-bottom: 1px solid #cfd4dd; display: flex; align-items: center; gap: .9rem; padding: .35rem .9rem; flex-wrap: wrap; }
+.pagebar .tool-group + .tool-group { border-left-color: #d9dde5; }
+.pagebar button { background: #f4f5f8; color: var(--ink); border: 1px solid #cfd4dd; border-radius: 6px; padding: .25rem .65rem; font-size: .84rem; line-height: 1.4; }
+.pagebar button:hover:not(:disabled) { background: #e6e9ef; }
+.pagebar button:disabled { opacity: .45; }
+.pagebar #delete-pages:hover:not(:disabled) { background: #fbe9e7; border-color: #e3a59d; color: #a3261a; }
+.selection { margin-left: auto; font-size: .8rem; color: var(--muted); }
+.thumb { cursor: grab; }
+.thumb.selected .thumb-frame { outline-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59, 130, 246, .25); }
+.thumb.selected { color: #1d4ed8; font-weight: 700; }
+.thumb.drag-ghost { opacity: .35; }
 
 .workspace { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: 0; }
 .sidebar { background: #eef0f4; border-right: 1px solid #cfd4dd; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
@@ -106,4 +118,4 @@ body { color: var(--ink); background: var(--bg); font-family: system-ui, -apple-
   .sidebar { display: none; }
   .doc-name { display: none; }
 }
-@media print { .toolbar, .sidebar, .statusbar { display: none; } }
+@media print { .toolbar, .pagebar, .sidebar, .statusbar { display: none; } }

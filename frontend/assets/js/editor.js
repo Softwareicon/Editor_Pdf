@@ -1,5 +1,6 @@
-// PDF viewer (Phase 1). Rendering is done by PDF.js; page geometry comes from the backend so the
+// PDF viewer and page organiser. Rendering is done by PDF.js; page geometry comes from the backend so the
 // whole document can be laid out immediately and pages are only rendered when they scroll into view.
+// Every page edit is performed by the server on the real file and stored as a new version (undo/redo).
 import * as pdfjsLib from "../vendor/pdfjs/pdf.min.mjs";
 import { api, formatBytes, requireUser, toast, uploadPdf } from "./api.js";
 
@@ -15,7 +16,7 @@ const state = {
   docId: new URLSearchParams(location.search).get("id"),
   doc: null, pdf: null, blob: null, scale: 1, fitMode: "width", current: 1,
   pages: [],            // [{ div, canvas, layer, w, h, renderTask, renderedScale }], w/h in PDF points as displayed
-  visible: new Set(), text: new Map(), matches: [], matchIndex: -1, query: "", searchRun: 0,
+  visible: new Set(), selected: new Set(), busy: false, text: new Map(), matches: [], matchIndex: -1, query: "", searchRun: 0,
 };
 
 function el(tag, props = {}, ...children) {
@@ -43,6 +44,11 @@ function askPassword(reason) {
 async function load() {
   await requireUser();
   if (!state.docId) return showMessage("No document selected. Go back to your files and open one.");
+  await openDocument(1);
+}
+
+// (Re)load the document's current version. Called on start and after every edit, undo and redo.
+async function openDocument(page = state.current) {
   try {
     state.doc = await api(`/api/documents/${encodeURIComponent(state.docId)}`);
   } catch (e) {
@@ -51,45 +57,62 @@ async function load() {
   $("doc-name").textContent = state.doc.original_filename;
   document.title = `${state.doc.original_filename} · PDF Master Pro`;
 
-  setStatus(`Downloading ${formatBytes(state.doc.file_size)}…`);
+  setStatus(`Loading ${formatBytes(state.doc.file_size)}…`);
   const [res, geometry] = await Promise.all([
     api(`/api/documents/${state.docId}/download`, { raw: true }),
     api(`/api/editor/${state.docId}/pages`).catch(() => null),
   ]);
-  state.blob = await res.blob();
-  $("download").disabled = $("print").disabled = false;
-
-  setStatus("Opening…");
+  const blob = await res.blob();
   const task = pdfjsLib.getDocument({
-    data: await state.blob.arrayBuffer(), cMapUrl: `${VENDOR}cmaps/`, cMapPacked: true,
+    data: await blob.arrayBuffer(), cMapUrl: `${VENDOR}cmaps/`, cMapPacked: true,
     standardFontDataUrl: `${VENDOR}standard_fonts/`, isEvalSupported: false, enableXfa: false,
   });
   task.onPassword = async (update, reason) => {
     const password = await askPassword(reason);
     if (password === null) task.destroy(); else update(password);
   };
+  let pdf;
   try {
-    state.pdf = await task.promise;
+    pdf = await task.promise;
   } catch (e) {
     if (e?.name === "PasswordException" || task.destroyed) return showMessage("A password is required to view this document.");
     console.error(e);
     return showMessage("This PDF could not be displayed. The file may be damaged or use unsupported features.");
   }
 
-  const count = state.pdf.numPages;
+  // Swap in the new document only once it has opened, so a failed reload leaves the old view intact.
+  teardown();
+  state.blob = blob;
+  state.pdf = pdf;
+  $("download").disabled = $("print").disabled = false;
+  const count = pdf.numPages;
   let sizes = geometry?.pages?.length === count ? geometry.pages.map(displaySize) : null;
   if (!sizes) { // e.g. password-protected file the server cannot read: fall back to page 1, corrected as pages render
-    const vp = (await state.pdf.getPage(1)).getViewport({ scale: 1 });
+    const vp = (await pdf.getPage(1)).getViewport({ scale: 1 });
     sizes = Array.from({ length: count }, () => ({ w: vp.width, h: vp.height }));
   }
+  state.current = Math.min(count, Math.max(1, page));
   buildPages(sizes);
   buildThumbnails();
   $("page-total").textContent = count;
   Object.assign($("page-input"), { max: count, disabled: false });
-  applyFit("width");
-  setStatus("Ready");
+  if (state.fitMode) applyFit(state.fitMode); else updateZoomLabel();
+  goToPage(state.current);
+  updateTools();
+  setStatus(state.doc.current_version > 1 ? "All changes saved" : "Ready");
   loadOutline().catch(console.error);
   loadAttachments().catch(console.error);
+  if (state.query) runSearch(state.query, false);
+}
+
+function teardown() {
+  pageObserver.disconnect();
+  thumbObserver.disconnect();
+  for (const p of state.pages) p.renderTask?.task.cancel();
+  state.pdf?.destroy();
+  state.pages = []; state.thumbs = [];
+  state.visible.clear(); state.selected.clear(); state.text.clear();
+  state.matches = []; state.matchIndex = -1; state.searchRun++;
 }
 
 function displaySize(p) {
@@ -251,13 +274,96 @@ function buildThumbnails() {
     frame.style.aspectRatio = `${p.w} / ${p.h}`;
     const button = el("button", { className: "thumb", type: "button", title: `Page ${i + 1}` }, frame, el("span", { textContent: i + 1 }));
     button.dataset.page = i + 1;
-    button.addEventListener("click", () => goToPage(i + 1));
+    button.addEventListener("click", (e) => selectThumb(i + 1, e));
     thumbObserver.observe(button);
     return button;
   });
   $("thumbs").replaceChildren(...state.thumbs);
-  state.thumbs[0]?.classList.add("active");
+  state.thumbs[state.current - 1]?.classList.add("active");
 }
+
+// ---------- page selection & editing ----------
+function selectThumb(n, event) {
+  if (event.ctrlKey || event.metaKey) {
+    if (state.selected.has(n)) state.selected.delete(n); else state.selected.add(n);
+  } else if (event.shiftKey) {
+    const from = Math.min(n, state.current), to = Math.max(n, state.current);
+    for (let i = from; i <= to; i++) state.selected.add(i);
+  } else {
+    state.selected.clear();
+    state.selected.add(n);
+    goToPage(n);
+  }
+  updateTools();
+}
+
+// Pages an action applies to: the selected thumbnails, or the current page when nothing is selected.
+const targets = () => (state.selected.size ? [...state.selected].sort((a, b) => a - b) : [state.current]);
+
+function updateTools() {
+  const editable = Boolean(state.pdf) && state.doc?.processing_status !== "encrypted" && !state.busy;
+  state.thumbs?.forEach((t, i) => t.classList.toggle("selected", state.selected.has(i + 1)));
+  for (const b of document.querySelectorAll("#page-tools button, #doc-tools button")) b.disabled = !editable;
+  if (editable && targets().length >= state.pages.length) $("delete-pages").disabled = true; // a PDF needs one page
+  if (editable && state.pages.length < 2) $("reverse").disabled = true;
+  $("undo").disabled = state.busy || !state.doc?.can_undo;
+  $("redo").disabled = state.busy || !state.doc?.can_redo;
+  sortable?.option("disabled", !editable);
+  const t = targets();
+  $("selection").textContent = !state.pdf ? "" : state.doc.processing_status === "encrypted"
+    ? "Password-protected PDFs cannot be edited yet"
+    : state.selected.size > 1 ? `${t.length} pages selected` : `Page ${t[0]} selected · Ctrl/Shift-click to select more · drag thumbnails to reorder`;
+}
+
+// Run one server-side edit, then reload the new version in place.
+async function edit(label, request, page = state.current) {
+  if (state.busy) return null;
+  state.busy = true;
+  updateTools();
+  setStatus(`${label}…`);
+  try {
+    const result = await request();
+    state.busy = false;
+    await openDocument(page);
+    return result;
+  } catch (e) {
+    state.busy = false;
+    toast(e.message);
+    await openDocument(page).catch(console.error); // also restores thumbnail order after a failed drag
+    return null;
+  }
+}
+
+const pageOp = (op, body) => api(`/api/pages/${op}`, { method: "POST", json: { document_id: state.docId, ...body } });
+
+const sortable = window.Sortable ? new window.Sortable($("thumbs"), {
+  animation: 120, forceFallback: true, fallbackTolerance: 4, ghostClass: "drag-ghost",
+  onEnd: (e) => {
+    if (e.oldIndex === e.newIndex) return;
+    const order = [...$("thumbs").children].map((t) => Number(t.dataset.page));
+    edit("Reordering pages", () => pageOp("reorder", { order }), e.newIndex + 1);
+  },
+}) : null;
+
+$("rotate-left").addEventListener("click", () => edit("Rotating", () => pageOp("rotate", { pages: targets(), angle: 270 })));
+$("rotate-right").addEventListener("click", () => edit("Rotating", () => pageOp("rotate", { pages: targets(), angle: 90 })));
+$("duplicate").addEventListener("click", () => edit("Duplicating", () => pageOp("duplicate", { pages: targets() })));
+$("reverse").addEventListener("click", () => edit("Reversing page order", () => pageOp("reverse", {}), 1));
+$("add-blank").addEventListener("click", () =>
+  edit("Adding a blank page", () => pageOp("add", { after: state.current }), state.current + 1));
+$("delete-pages").addEventListener("click", async () => {
+  const pages = targets();
+  const done = await edit("Deleting", () => pageOp("delete", { pages }), Math.max(1, pages[0] - 1));
+  if (done) toast(`Deleted ${pages.length} page${pages.length === 1 ? "" : "s"}. Use Undo to bring ${pages.length === 1 ? "it" : "them"} back.`, "ok");
+});
+$("extract").addEventListener("click", async () => {
+  const doc = await edit("Extracting", () => pageOp("extract", { pages: targets() }));
+  if (!doc) return;
+  const note = toast(`Created "${doc.original_filename}". `, "ok");
+  note.append(el("a", { href: `editor.html?id=${encodeURIComponent(doc.id)}`, textContent: "Open it", className: "text-white" }));
+});
+$("undo").addEventListener("click", () => edit("Undoing", () => api(`/api/editor/${state.docId}/undo`, { method: "POST" })));
+$("redo").addEventListener("click", () => edit("Redoing", () => api(`/api/editor/${state.docId}/redo`, { method: "POST" })));
 
 async function renderThumb(n) {
   try {
@@ -331,7 +437,7 @@ async function pageText(n) {
   return state.text.get(n);
 }
 
-async function runSearch(query) {
+async function runSearch(query, jump = true) {
   const run = ++state.searchRun;
   query = query.trim().toLowerCase();
   state.query = query; state.matches = []; state.matchIndex = -1;
@@ -348,7 +454,8 @@ async function runSearch(query) {
     if (n % 20 === 0 || n === state.pdf.numPages) { setStatus(`Searching… page ${n} of ${state.pdf.numPages}`); updateSearchUi(); }
   }
   setStatus(state.matches.length ? "Ready" : "No matches found");
-  if (state.matches.length) stepMatch(1, state.matches.findIndex((m) => m.page >= state.current));
+  if (state.matches.length && jump) stepMatch(1, state.matches.findIndex((m) => m.page >= state.current));
+  else { if (state.matches.length) state.matchIndex = 0; for (const n of state.visible) drawHighlights(n); updateSearchUi(); }
 }
 
 function stepMatch(direction, startAt = null) {
@@ -450,6 +557,10 @@ document.addEventListener("keydown", (e) => {
   else if (mod && (e.key === "+" || e.key === "=")) { e.preventDefault(); zoomIn(); }
   else if (mod && e.key === "-") { e.preventDefault(); zoomOut(); }
   else if (mod && e.key.toLowerCase() === "p" && state.blob) { e.preventDefault(); printDocument(); }
+  else if (mod && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName) && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    $(e.shiftKey ? "redo" : "undo").click();
+  } else if (mod && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName) && e.key.toLowerCase() === "y") { e.preventDefault(); $("redo").click(); }
 });
 viewer.addEventListener("wheel", (e) => {
   if (!e.ctrlKey) return;

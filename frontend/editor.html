@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Viewer · PDF Master Pro</title>
+  <title>Editor · PDF Master Pro</title>
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css">
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
@@ -33,6 +33,25 @@
       <button id="print" type="button" disabled>Print</button>
     </div>
   </header>
+
+  <div class="pagebar" role="toolbar" aria-label="Page tools">
+    <div class="tool-group">
+      <button id="undo" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
+      <button id="redo" type="button" title="Redo (Ctrl+Y)" disabled>Redo</button>
+    </div>
+    <div class="tool-group" id="page-tools">
+      <button id="rotate-left" type="button" title="Rotate selected pages 90° anticlockwise">Rotate left</button>
+      <button id="rotate-right" type="button" title="Rotate selected pages 90° clockwise">Rotate right</button>
+      <button id="duplicate" type="button" title="Insert a copy after each selected page">Duplicate</button>
+      <button id="delete-pages" type="button" title="Delete the selected pages">Delete</button>
+      <button id="extract" type="button" title="Copy the selected pages into a new document">Extract</button>
+    </div>
+    <div class="tool-group" id="doc-tools">
+      <button id="add-blank" type="button" title="Insert a blank page after the current page">Add blank page</button>
+      <button id="reverse" type="button" title="Reverse the order of all pages">Reverse order</button>
+    </div>
+    <span id="selection" class="selection"></span>
+  </div>
 
   <div class="workspace">
     <aside class="sidebar" aria-label="Document navigation">
@@ -69,6 +88,7 @@
     </form>
   </dialog>
 
+  <script src="assets/vendor/sortable/Sortable.min.js"></script>
   <script src="assets/js/config.js"></script>
   <script type="module" src="assets/js/editor.js"></script>
 </body>

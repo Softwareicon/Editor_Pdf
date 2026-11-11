@@ -11,6 +11,9 @@ class DocumentOut(BaseModel):
     page_count: int | None
     mime_type: str
     processing_status: str
+    current_version: int
+    can_undo: bool
+    can_redo: bool
     created_at: datetime
     updated_at: datetime
 
@@ -45,3 +48,18 @@ class MetadataOut(BaseModel):
     needs_password: bool
     page_count: int | None
     info: dict[str, str]
+
+
+class VersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    version_number: int
+    change_description: str
+    page_count: int | None
+    file_size: int | None
+    created_at: datetime
+
+
+class VersionsOut(BaseModel):
+    document_id: str
+    current_version: int
+    versions: list[VersionOut]
