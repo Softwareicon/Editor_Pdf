@@ -53,6 +53,48 @@
     <span id="selection" class="selection"></span>
   </div>
 
+  <div class="pagebar editbar" role="toolbar" aria-label="Edit tools">
+    <div class="tool-group" id="edit-tools">
+      <button type="button" data-tool="select" title="Select, move and resize what you added (Esc)">Select</button>
+      <button type="button" data-tool="text" title="Click on the page and type">Text</button>
+      <button type="button" data-tool="whiteout" title="Drag a white box over content to hide it, then add new text on top">Whiteout</button>
+      <button type="button" data-tool="highlight" title="Drag over text to highlight it">Highlight</button>
+      <button type="button" data-tool="pen" title="Draw freehand">Pen</button>
+      <button type="button" data-tool="rect" title="Draw a rectangle">Rectangle</button>
+      <button type="button" data-tool="ellipse" title="Draw an ellipse">Ellipse</button>
+      <button type="button" data-tool="line" title="Draw a straight line">Line</button>
+      <button type="button" data-tool="arrow" title="Draw an arrow">Arrow</button>
+    </div>
+    <div class="tool-group" id="edit-insert">
+      <button id="edit-image" type="button" title="Add a picture from your computer">Image</button>
+      <input id="edit-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+      <button id="edit-sign" type="button" title="Draw your signature and place it on the page">Signature</button>
+    </div>
+    <div class="tool-group" id="edit-props">
+      <input id="edit-color" type="color" value="#000000" title="Colour" aria-label="Colour">
+      <select id="edit-font" title="Font" aria-label="Font">
+        <option value="helvetica">Sans (Helvetica)</option>
+        <option value="times">Serif (Times)</option>
+        <option value="courier">Mono (Courier)</option>
+      </select>
+      <select id="edit-size" title="Text size" aria-label="Text size">
+        <option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option selected>14</option>
+        <option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>36</option><option>48</option><option>72</option>
+      </select>
+      <button id="edit-bold" type="button" title="Bold" aria-label="Bold"><b>B</b></button>
+      <button id="edit-italic" type="button" title="Italic" aria-label="Italic"><i>I</i></button>
+      <select id="edit-width" title="Line thickness" aria-label="Line thickness">
+        <option value="0.75">Thin</option><option value="1.5" selected>Normal</option><option value="3">Thick</option><option value="6">Heavy</option>
+      </select>
+      <button id="edit-delete" type="button" title="Delete the selected object (Del)" disabled>Delete object</button>
+    </div>
+    <div class="tool-group ms-auto">
+      <span id="edit-count" class="edit-count" aria-live="polite"></span>
+      <button id="discard-edits" type="button" title="Remove all unsaved edits" disabled>Discard</button>
+      <button id="save-edits" type="button" class="save" title="Write the edits into the PDF (Ctrl+S)" disabled>Save edits</button>
+    </div>
+  </div>
+
   <div class="workspace">
     <aside class="sidebar" aria-label="Document navigation">
       <div class="side-tabs" role="tablist">
@@ -84,6 +126,21 @@
       <div class="d-flex justify-content-end gap-2">
         <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
         <button class="btn btn-brand" value="ok">Open</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sign-dialog" class="pm-dialog sign-dialog">
+    <form method="dialog">
+      <h2 class="h5">Draw your signature</h2>
+      <p class="text-secondary small">Use the mouse or your finger. It is placed on the current page as a picture; this is a visual signature, not a certificate-based digital signature.</p>
+      <canvas id="sign-canvas" width="1000" height="360" aria-label="Signature drawing area"></canvas>
+      <div class="d-flex justify-content-between gap-2 mt-3">
+        <button id="sign-clear" type="button" class="btn btn-outline-secondary">Clear</button>
+        <span class="d-flex gap-2">
+          <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
+          <button class="btn btn-brand" value="ok">Place signature</button>
+        </span>
       </div>
     </form>
   </dialog>

@@ -30,11 +30,20 @@ Part A — page management and history (complete)
 - [x] Encrypted PDFs (including owner-password-only) are refused rather than silently decrypted
 - [x] Tests: 10 more backend tests (36 total), 2 more browser tests (7 total); upgrade of a Phase 1 database verified on PostgreSQL
 
-Part B — not started
+Part B1 — overlay editing (complete)
+- [x] Add text (font, size, colour, bold, italic; move, resize, re-edit); text the standard PDF fonts cannot
+      encode (Hindi and other scripts) is saved as a picture of the text
+- [x] Whiteout (opaque box that hides content so new text can be placed on top), highlight
+- [x] Rectangle, ellipse, line, arrow, freehand pen
+- [x] Insert image (PNG/JPEG/WebP/GIF), drawn signature (visual only)
+- [x] Objects stay editable until "Save edits"; a save is one new version, so Undo/Redo work
+- [x] Tests: 5 more backend tests (41 total), 1 more browser test (8 total)
+
+Part B2 — not started
 - [ ] **Java engine (PDFBox).** Blocked in the build environment: Maven Central was unreachable, so the
       engine could not be compiled or tested there. Page management therefore uses pypdf (BSD), which
       handles it well. See "Text editing engine" in ARCHITECTURE.md for the decision this forces.
-- [ ] Text: select / modify / delete / insert, font, size, colour, weight, alignment, move, rotate
+- [ ] Editing the PDF's own text in place (existing text can currently only be covered and retyped)
 - [ ] Content-type detection (native / scanned / outlined / flattened) surfaced in the UI
 - [ ] Images: insert, replace, delete, resize, crop, rotate, move, opacity
 - [ ] Pages still missing: insert pages from another PDF, replace pages, resize page, crop page

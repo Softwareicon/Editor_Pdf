@@ -55,7 +55,7 @@ body { color: var(--ink); background: var(--bg); font-family: system-ui, -apple-
 .pm-toast-ok { border-left-color: #2e9e5b; }
 
 /* ---- viewer ---- */
-.editor-page { height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; background: #dfe2e8; }
+.editor-page { height: 100vh; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; overflow: hidden; background: #dfe2e8; }
 .toolbar { background: var(--ink); color: #fff; display: flex; align-items: center; gap: .9rem; padding: .45rem .9rem; flex-wrap: wrap; }
 .toolbar .brand { color: #fff; }
 .doc-name { font-weight: 600; font-size: .92rem; max-width: 22vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -112,6 +112,29 @@ body { color: var(--ink); background: var(--bg); font-family: system-ui, -apple-
 .statusbar { background: #fff; border-top: 1px solid #cfd4dd; display: flex; align-items: center; gap: 1.5rem; padding: .3rem .9rem; font-size: .82rem; color: #4a5263; }
 .statusbar label { margin: 0; }
 .statusbar input { width: 4.2rem; padding: .1rem .3rem; border: 1px solid #c3c8d2; border-radius: 4px; font-size: .82rem; text-align: center; }
+
+/* ---- content editing (overlay objects) ---- */
+.editbar { background: #f8f9fb; }
+.editbar .tool-group.ms-auto { margin-left: auto; }
+.editbar button.active { background: var(--ink); border-color: var(--ink); color: #fff; }
+.editbar button.save:not(:disabled) { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+.editbar button.save:hover:not(:disabled) { background: var(--brand-dark); }
+.editbar select, .editbar input[type=color] { border: 1px solid #cfd4dd; border-radius: 6px; background: #fff; font-size: .84rem; height: 1.95rem; padding: 0 .3rem; }
+.editbar input[type=color] { width: 2.2rem; padding: .1rem; }
+.editbar select:disabled, .editbar input:disabled { opacity: .45; }
+.edit-count { font-size: .8rem; color: #a3261a; font-weight: 600; }
+.edit-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
+.edit-layer .edit-item { pointer-events: auto; cursor: move; }
+.edit-layer .whiteout { stroke: #9aa3b5; stroke-width: .5; stroke-dasharray: 3 2; }
+.edit-selection { fill: none; stroke: #2563eb; pointer-events: none; }
+.edit-handle { fill: #fff; stroke: #2563eb; pointer-events: auto; cursor: nwse-resize; }
+.pages[data-tool]:not([data-tool=select]) .page { cursor: crosshair; touch-action: none; user-select: none; }
+.pages[data-tool]:not([data-tool=select]) .edit-item { cursor: crosshair; }
+.pages[data-tool=text] .page { cursor: text; }
+.edit-textbox { position: absolute; margin: 0; padding: 0; border: 0; outline: 1px dashed #2563eb; outline-offset: 2px; background: rgba(255, 255, 255, .75);
+  line-height: 1.2; white-space: pre; overflow: hidden; resize: none; min-width: 1em; z-index: 5; }
+.sign-dialog { width: min(94vw, 560px); }
+#sign-canvas { width: 100%; height: auto; aspect-ratio: 1000 / 360; border: 1px dashed #9aa3b5; border-radius: 8px; background: #fff; touch-action: none; cursor: crosshair; display: block; }
 
 @media (max-width: 760px) {
   .workspace { grid-template-columns: minmax(0, 1fr); }

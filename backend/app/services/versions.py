@@ -85,3 +85,29 @@ def add_version(db: Session, doc: Document, rel_path: str, size: int, page_count
         doomed.append(oldest)
     db.flush()
     return [v.storage_path for v in doomed]
+
+
+def run_overlay(doc: Document, items: list[dict]) -> tuple[str, int, int]:
+    """Draw overlay items on a copy of the document's current file. Returns (relative_path, size, page_count)."""
+    import json
+
+    s = get_settings()
+    if doc.processing_status == "encrypted":
+        raise ApiError(409, "document_encrypted", "Password-protected PDFs cannot be edited until they are unlocked")
+    src = storage.resolve(doc.storage_path)
+    if not src.is_file():
+        raise ApiError(410, "file_missing", "The stored file is no longer available")
+    tmp = s.temp_dir / f"{uuid.uuid4().hex}.out"
+    try:
+        result = run_worker("overlay_ops.py", [str(src), str(tmp)], stdin=json.dumps({"items": items}))
+        if not result.get("ok"):
+            if result.get("error") == "encrypted":
+                raise ApiError(409, "document_encrypted", "Encrypted PDFs cannot be edited until they are unlocked")
+            if result.get("error") == "bad_request":
+                raise ApiError(422, "invalid_edit", f"The edits could not be applied: {result.get('detail')}")
+            raise ApiError(422, "edit_failed", "This PDF could not be modified; its structure may be damaged")
+        size = tmp.stat().st_size
+        _, rel = storage.commit_upload(tmp, doc.user_id)
+        return rel, size, result["page_count"]
+    finally:
+        tmp.unlink(missing_ok=True)

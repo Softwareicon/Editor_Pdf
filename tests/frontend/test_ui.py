@@ -318,5 +318,117 @@ def test_page_tools_are_disabled_for_password_protected_pdfs(page, tmp_path):
     page.fill("#pdf-password", "open-sesame"); page.click("#password-form button[value=ok]")
     expect(page.locator("#status")).to_have_text("Ready")
     expect(page.locator("#selection")).to_have_text("Password-protected PDFs cannot be edited yet")
-    for button in ("#rotate-left", "#delete-pages", "#duplicate", "#add-blank", "#reverse", "#extract", "#undo"):
+    for button in ("#rotate-left", "#delete-pages", "#duplicate", "#add-blank", "#reverse", "#extract", "#undo",
+                   "#edit-tools button[data-tool=text]", "#edit-image", "#edit-sign", "#save-edits"):
         expect(page.locator(button)).to_be_disabled()
+
+
+def test_content_editing_text_shapes_image_signature_save_and_undo(page, tmp_path):
+    import io
+    from PIL import Image
+    from pypdf import PdfReader
+
+    pdf = tmp_path / "edit.pdf"
+    pdf.write_bytes(build_pdf(["Original one", "Original two"]))
+    picture = tmp_path / "logo.png"
+    Image.new("RGB", (120, 60), (20, 120, 220)).save(picture)
+    sign_up(page, "edit@example.com")
+    page.set_input_files("#file-input", str(pdf))
+    page.locator("#file-rows tr").get_by_role("link", name="Open").click()
+    expect(page.locator("#status")).to_have_text("Ready")
+    expect(page.locator("#save-edits")).to_be_disabled()
+    count = page.locator("#edit-count")
+    tool = lambda name: page.click(f"#edit-tools button[data-tool={name}]")
+    page.click("#fit-page")                     # the whole page must be on screen for the mouse to reach it
+    box = page.locator(".page[data-page='1']").bounding_box()
+    k = box["width"] / 612                      # CSS pixels per PDF point
+    at = lambda x, y: (box["x"] + x * k, box["y"] + y * k)
+
+    def drag(x1, y1, x2, y2):
+        page.mouse.move(*at(x1, y1)); page.mouse.down()
+        page.mouse.move(*at((x1 + x2) / 2, (y1 + y2) / 2 + 3), steps=3); page.mouse.move(*at(x2, y2), steps=3)
+        page.mouse.up()
+
+    # text: click, type two lines, finish with Ctrl+Enter; the tool returns to Select with the text selected
+    tool("text")
+    page.mouse.click(*at(100, 200))
+    page.keyboard.type("Hello World")
+    page.keyboard.press("Enter")
+    page.keyboard.type("Line two")
+    page.keyboard.press("Control+Enter")
+    expect(count).to_have_text("1 unsaved edit")
+    expect(page.locator("#edit-tools button[data-tool=select]")).to_have_class("active")
+    expect(page.locator(".edit-layer text")).to_have_count(1)
+    expect(page.locator("#undo")).to_be_enabled()
+
+    # whiteout over the original heading, a rectangle, an arrow, a pen stroke and a highlight
+    tool("whiteout"); drag(60, 80, 320, 115)
+    tool("rect"); drag(350, 300, 450, 360)
+    tool("arrow"); drag(100, 400, 250, 450)
+    tool("pen"); drag(100, 500, 200, 540)
+    tool("highlight"); drag(90, 190, 260, 215)
+    expect(count).to_have_text("6 unsaved edits")
+
+    # a tiny drag creates nothing; local undo removes the newest object (the highlight)
+    drag(300, 600, 301, 601)
+    expect(count).to_have_text("6 unsaved edits")
+    page.click("#undo")
+    expect(count).to_have_text("5 unsaved edits")
+
+    # text the standard PDF fonts cannot encode is saved as a picture of the text
+    tool("text")
+    page.mouse.click(*at(100, 620))
+    page.keyboard.insert_text("\u0928\u092e\u0938\u094d\u0924\u0947")
+    page.keyboard.press("Control+Enter")
+
+    # picture from a file, then a drawn signature
+    page.set_input_files("#edit-image-input", str(picture))
+    expect(page.locator(".edit-layer image")).to_have_count(1)
+    page.click("#edit-sign")
+    pad = page.locator("#sign-canvas").bounding_box()
+    page.mouse.move(pad["x"] + 40, pad["y"] + 60); page.mouse.down()
+    page.mouse.move(pad["x"] + 140, pad["y"] + 30, steps=5); page.mouse.move(pad["x"] + 220, pad["y"] + 90, steps=5)
+    page.mouse.up()
+    page.click("#sign-dialog button[value=ok]")
+    expect(page.locator(".edit-layer image")).to_have_count(2)
+    expect(count).to_have_text("8 unsaved edits")
+
+    # move the first text with the Select tool, and delete the rectangle with the keyboard
+    tool("select")
+    page.mouse.click(*at(360, 300))             # on the rectangle's outline
+    expect(page.locator("#edit-delete")).to_be_enabled()
+    page.keyboard.press("Delete")
+    expect(count).to_have_text("7 unsaved edits")
+    drag(110, 205, 160, 255)                    # text moves by (50, 50)
+    expect(page.locator(".edit-selection")).to_have_count(1)
+
+    if os.environ.get("PDFMASTER_SCREENSHOT_DIR"):
+        page.screenshot(path=os.path.join(os.environ["PDFMASTER_SCREENSHOT_DIR"], "edit.png"))
+
+    # save: one new version containing everything
+    page.click("#save-edits")
+    expect(page.locator("#status")).to_have_text("All changes saved")
+    expect(count).to_have_text("")
+    expect(page.locator(".edit-layer .edit-item")).to_have_count(0)
+    with page.expect_download() as dl:
+        page.click("#download")
+    first, second = PdfReader(io.BytesIO(Path(dl.value.path()).read_bytes())).pages
+    text = first.extract_text()
+    assert "Hello World" in text and "Line two" in text and "Original one" in text
+    assert second.extract_text().strip() == "Original two"
+    assert len(first.images) == 3              # picture, signature and the non-Latin text
+    found = {}
+    first.extract_text(visitor_text=lambda t, cm, tm, f, s: found.setdefault(t.strip(), (tm[4], tm[5])) if t.strip() else None)
+    x, y = found["Hello World"]
+    assert abs(x - 150) < 3 and abs(792 - y - (250 - 0.6 * 14 + 0.9 * 14)) < 3, (x, y)
+
+    if os.environ.get("PDFMASTER_SCREENSHOT_DIR"):
+        page.screenshot(path=os.path.join(os.environ["PDFMASTER_SCREENSHOT_DIR"], "edit-saved.png"))
+
+    # Undo now takes the whole save back on the server
+    page.click("#undo")
+    expect(page.locator("#status")).to_have_text("Ready")
+    with page.expect_download() as dl:
+        page.click("#download")
+    assert "Hello World" not in PdfReader(io.BytesIO(Path(dl.value.path()).read_bytes())).pages[0].extract_text()
+    assert page.problems == [], page.problems

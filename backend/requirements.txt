@@ -11,3 +11,5 @@ PyJWT>=2.9,<3.0
 python-multipart>=0.0.18
 pypdf>=5.1,<7.0
 cryptography>=43
+reportlab>=4.2,<5.0
+Pillow>=10.4

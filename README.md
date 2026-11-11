@@ -20,6 +20,10 @@ conversion, OCR and the other tools are designed (see [`docs/ARCHITECTURE.md`](d
   saved as a version; **Undo/Redo** step through versions, even after you close the browser.
   Page content is copied as-is (no re-rendering, no quality loss). Limits: bookmarks are dropped when
   you duplicate pages or add blank pages; encrypted PDFs cannot be edited yet.
+- **Editing** — add text, whiteout (cover content and type over it), highlight, rectangle, ellipse, line,
+  arrow, freehand pen, images and a drawn signature. Objects can be moved and resized until you press
+  **Save edits**, which writes them into the PDF as a new version (Undo takes it back). Whiteout hides
+  content visually; it does not remove it from the file, so it is not a redaction tool.
 - **Operations** — Alembic migrations (SQLite or PostgreSQL), audit log, rate limiting, strict
   Content-Security-Policy, automatic temp-file cleanup, Docker image, CI workflow.
 

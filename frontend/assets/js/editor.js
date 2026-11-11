@@ -3,6 +3,7 @@
 // Every page edit is performed by the server on the real file and stored as a new version (undo/redo).
 import * as pdfjsLib from "../vendor/pdfjs/pdf.min.mjs";
 import { api, formatBytes, requireUser, toast, uploadPdf } from "./api.js";
+import { createEditTools } from "./edit-tools.js";
 
 const VENDOR = new URL("../vendor/pdfjs/", import.meta.url).href;
 pdfjsLib.GlobalWorkerOptions.workerSrc = `${VENDOR}pdf.worker.min.mjs`;
@@ -25,6 +26,13 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 const setStatus = (text) => { $("status").textContent = text; };
+
+// Text, whiteout, shapes, pen, images and signatures drawn on top of the pages (see edit-tools.js).
+const edits = createEditTools({
+  state, pagesEl, viewer, CSS_UNITS,
+  onChange: () => { updateTools(); if (edits.hasPending() && !state.busy) setStatus("Unsaved edits — click Save edits to write them into the PDF"); },
+  save: () => saveEdits(),
+});
 function showMessage(text) { $("message").textContent = text; $("message").hidden = false; pagesEl.hidden = true; }
 
 // ---------- loading ----------
@@ -140,6 +148,7 @@ function buildPages(sizes) {
     return { div, canvas, layer, ...size, renderTask: null, renderedScale: 0 };
   });
   sizePages();
+  edits.attach();
   for (const p of state.pages) pageObserver.observe(p.div);
 }
 
@@ -160,6 +169,7 @@ async function renderPage(n) {
   if (Math.abs(vp.width / (scale * CSS_UNITS) - p.w) > 0.5 || Math.abs(vp.height / (scale * CSS_UNITS) - p.h) > 0.5) {
     p.w = vp.width / (scale * CSS_UNITS); p.h = vp.height / (scale * CSS_UNITS); // trust the renderer's geometry
     p.div.style.width = `${Math.floor(vp.width)}px`; p.div.style.height = `${Math.floor(vp.height)}px`;
+    edits.syncPage(n);
   }
   let ratio = window.devicePixelRatio || 1;
   const pixels = vp.width * vp.height * ratio * ratio;
@@ -202,6 +212,7 @@ function setScale(scale, mode = null) {
   const offsetRatio = anchor ? (viewer.scrollTop - anchor.div.offsetTop) / anchor.div.offsetHeight : 0;
   state.scale = scale;
   sizePages();
+  edits.refresh();
   if (anchor) viewer.scrollTop = anchor.div.offsetTop + offsetRatio * anchor.div.offsetHeight;
   for (const n of state.visible) renderPage(n);
   updateZoomLabel();
@@ -306,8 +317,9 @@ function updateTools() {
   for (const b of document.querySelectorAll("#page-tools button, #doc-tools button")) b.disabled = !editable;
   if (editable && targets().length >= state.pages.length) $("delete-pages").disabled = true; // a PDF needs one page
   if (editable && state.pages.length < 2) $("reverse").disabled = true;
-  $("undo").disabled = state.busy || !state.doc?.can_undo;
-  $("redo").disabled = state.busy || !state.doc?.can_redo;
+  $("undo").disabled = state.busy || !(state.doc?.can_undo || edits.hasPending());
+  $("redo").disabled = state.busy || !state.doc?.can_redo || edits.hasPending();
+  edits.update(editable);
   sortable?.option("disabled", !editable);
   const t = targets();
   $("selection").textContent = !state.pdf ? "" : state.doc.processing_status === "encrypted"
@@ -316,8 +328,9 @@ function updateTools() {
 }
 
 // Run one server-side edit, then reload the new version in place.
-async function edit(label, request, page = state.current) {
+async function edit(label, request, page = state.current, isSave = false) {
   if (state.busy) return null;
+  if (!isSave && edits.hasPending() && !(await saveEdits())) return null; // page numbers are about to change: save first
   state.busy = true;
   updateTools();
   setStatus(`${label}…`);
@@ -332,6 +345,22 @@ async function edit(label, request, page = state.current) {
     await openDocument(page).catch(console.error); // also restores thumbnail order after a failed drag
     return null;
   }
+}
+
+// Write the unsaved overlay objects into the PDF (a new version, so Undo takes the whole save back).
+async function saveEdits() {
+  edits.finishTyping();
+  if (!edits.hasPending()) return true;
+  let items;
+  try { items = edits.buildPayload(); } catch (e) { toast(e.message); return false; }
+  const count = items.length;
+  const done = await edit("Saving edits", async () => {
+    const doc = await api("/api/edit/apply", { method: "POST", json: { document_id: state.docId, items } });
+    edits.clear();
+    return doc;
+  }, state.current, true);
+  if (done) toast(`Saved ${count} edit${count === 1 ? "" : "s"} into the PDF. Use Undo to take ${count === 1 ? "it" : "them"} back.`, "ok");
+  return Boolean(done);
 }
 
 const pageOp = (op, body) => api(`/api/pages/${op}`, { method: "POST", json: { document_id: state.docId, ...body } });
@@ -362,7 +391,10 @@ $("extract").addEventListener("click", async () => {
   const note = toast(`Created "${doc.original_filename}". `, "ok");
   note.append(el("a", { href: `editor.html?id=${encodeURIComponent(doc.id)}`, textContent: "Open it", className: "text-white" }));
 });
-$("undo").addEventListener("click", () => edit("Undoing", () => api(`/api/editor/${state.docId}/undo`, { method: "POST" })));
+$("undo").addEventListener("click", () => {
+  if (edits.hasPending()) return edits.undoLocal(); // unsaved objects are taken back one at a time first
+  edit("Undoing", () => api(`/api/editor/${state.docId}/undo`, { method: "POST" }));
+});
 $("redo").addEventListener("click", () => edit("Redoing", () => api(`/api/editor/${state.docId}/redo`, { method: "POST" })));
 
 async function renderThumb(n) {
@@ -567,6 +599,8 @@ viewer.addEventListener("wheel", (e) => {
   e.preventDefault();
   if (e.deltaY < 0) zoomIn(); else zoomOut();
 }, { passive: false });
+
+window.addEventListener("beforeunload", (e) => { if (edits.hasPending()) e.preventDefault(); });
 
 let resizeTimer;
 window.addEventListener("resize", () => {
