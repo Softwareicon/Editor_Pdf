@@ -55,9 +55,16 @@ def _draw(c, item: dict, height: float) -> None:
         size = float(item["size"])
         c.setFont(font, size)
         c.setFillColorRGB(*_rgb(item["color"]))
+        if float(item.get("opacity", 1)) < 1:
+            c.setFillAlpha(float(item["opacity"]))
+        # (x, y) is the top of the first line; x is its left edge, centre or right edge depending on the alignment.
+        c.translate(item["x"], height - (item["y"] + ASCENT * size))
+        if item.get("rotate"):
+            c.rotate(float(item["rotate"]))
+        draw = {"center": c.drawCentredString, "right": c.drawRightString}.get(item.get("align"), c.drawString)
         for i, line in enumerate(item["text"].split("\n")):
             if line:
-                c.drawString(item["x"], height - (item["y"] + ASCENT * size + i * LINE_HEIGHT * size), line)
+                draw(0, -i * LINE_HEIGHT * size, line)
     elif kind in ("rect", "ellipse"):
         fill, stroke = item.get("fill"), item.get("stroke")
         alpha = float(item.get("opacity", 1))
@@ -106,6 +113,8 @@ def _draw(c, item: dict, height: float) -> None:
         for x, y in rest:
             p.lineTo(x, height - y)
         c.drawPath(p, stroke=1, fill=0)
+    elif kind == "link":
+        pass  # added as an annotation after the overlay is merged
     elif kind == "image":
         c.drawImage(_image(item["data"]), item["x"], height - item["y"] - item["h"], item["w"], item["h"], mask="auto")
     else:
@@ -152,10 +161,10 @@ def apply(src_path: str, out_path: str, spec: dict) -> dict:
         order = sorted(by_page)
         buf = io.BytesIO()
         c = canvas.Canvas(buf, pageCompression=1)
-        placements = {}
+        placements, heights = {}, {}
         for n in order:
             width, height, ctm = _placement(writer.pages[n - 1])
-            placements[n] = ctm
+            placements[n], heights[n] = ctm, height
             c.setPageSize((width, height))
             for item in by_page[n]:
                 try:
@@ -166,8 +175,20 @@ def apply(src_path: str, out_path: str, spec: dict) -> dict:
             c.showPage()
         c.save()
         overlay = PdfReader(io.BytesIO(buf.getvalue()))
+        from pypdf.annotations import Link
+
         for i, n in enumerate(order):
-            writer.pages[n - 1].merge_transformed_page(overlay.pages[i], Transformation(placements[n]), over=True)
+            if any(item["type"] != "link" for item in by_page[n]):
+                writer.pages[n - 1].merge_transformed_page(overlay.pages[i], Transformation(placements[n]), over=True)
+            a, b, cc, d, e, f = placements[n]
+            height = heights[n]
+            for item in by_page[n]:
+                if item["type"] != "link":
+                    continue
+                corners = [(item["x"], height - item["y"]), (item["x"] + item["w"], height - item["y"] - item["h"])]
+                pts = [(a * u + cc * v + e, b * u + d * v + f) for u, v in corners]
+                rect = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+                writer.add_annotation(page_number=n - 1, annotation=Link(rect=rect, url=item["url"], border=[0, 0, 0]))
         with open(out_path, "wb") as f:
             writer.write(f)
         return {"ok": True, "page_count": count, "items": len(spec["items"])}

@@ -225,6 +225,11 @@ def test_one_user_cannot_open_another_users_document(page, browser, server, tmp_
     expect(other.locator("#message")).to_have_text("This document does not exist or you do not have access to it.")
 
 
+def _pos(cm, tm):
+    """Where a text run starts on the page: its text matrix placed by the current transformation matrix."""
+    return tm[4] * cm[0] + tm[5] * cm[2] + cm[4], tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
+
+
 def downloaded_texts(page):
     import io
     from pypdf import PdfReader
@@ -297,9 +302,10 @@ def test_page_tools_rotate_delete_duplicate_reorder_undo_redo(page, tmp_path):
     # extract leaves this document alone and offers the new one
     thumbs.nth(0).click()
     page.click("#extract")
-    expect(page.locator(".pm-toast-ok")).to_contain_text('Created "pages (extract).pdf".')
+    created = page.locator(".pm-toast-ok", has_text="Created")   # an earlier toast may still be on screen
+    expect(created).to_contain_text('Created "pages (extract).pdf".')
     expect(page.locator("#page-total")).to_have_text("4")
-    page.locator(".pm-toast-ok a").click()
+    created.locator("a").click()
     expect(page.locator("#page-total")).to_have_text("1")
     assert downloaded_texts(page) == ["P4"]
     if os.environ.get("PDFMASTER_SCREENSHOT_DIR"):
@@ -418,7 +424,7 @@ def test_content_editing_text_shapes_image_signature_save_and_undo(page, tmp_pat
     assert second.extract_text().strip() == "Original two"
     assert len(first.images) == 3              # picture, signature and the non-Latin text
     found = {}
-    first.extract_text(visitor_text=lambda t, cm, tm, f, s: found.setdefault(t.strip(), (tm[4], tm[5])) if t.strip() else None)
+    first.extract_text(visitor_text=lambda t, cm, tm, f, s: found.setdefault(t.strip(), _pos(cm, tm)) if t.strip() else None)
     x, y = found["Hello World"]
     assert abs(x - 150) < 3 and abs(792 - y - (250 - 0.6 * 14 + 0.9 * 14)) < 3, (x, y)
 
@@ -515,7 +521,127 @@ def test_edit_existing_text_replace_marks_typed_signature_and_blank_document(pag
     assert "Invoice Sum 250 paid" in first.extract_text() and "Sum again" in second.extract_text()
     assert len(first.images) == 1
     found = {}
-    first.extract_text(visitor_text=lambda t, cm, tm, f, s: found.setdefault(t.strip(), (tm[4], tm[5], s)) if t.strip() else None)
+    first.extract_text(visitor_text=lambda t, cm, tm, f, s: found.setdefault(t.strip(), (*_pos(cm, tm), s)) if t.strip() else None)
     x, y, size = found["Invoice Sum 250 paid"]
     assert abs(x - 72) < 1 and abs(y - 692) < 1.5 and abs(size - 24) < 0.6, (x, y, size)   # same place and size as the original line
+    assert page.problems == [], page.problems
+
+
+def test_tools_page_links_and_form_filling(page, tmp_path):
+    import io
+    from PIL import Image
+    from pypdf import PdfReader
+    from reportlab.pdfgen import canvas
+
+    (tmp_path / "alpha.pdf").write_bytes(build_pdf(["Alpha one", "Alpha two"]))
+    (tmp_path / "beta.pdf").write_bytes(build_pdf(["Beta one"]))
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(72, 750, "Application form")
+    c.acroForm.textfield(name="full_name", x=72, y=700, width=200, height=20, value="")
+    c.acroForm.checkbox(name="agree", x=72, y=660, size=14, checked=False)
+    c.save()
+    (tmp_path / "form.pdf").write_bytes(buf.getvalue())
+    Image.new("RGB", (300, 200), (10, 160, 90)).save(tmp_path / "photo.png")
+
+    sign_up(page, "tools@example.com")
+    page.set_input_files("#file-input", [str(tmp_path / n) for n in ("alpha.pdf", "beta.pdf", "form.pdf")])
+    expect(page.locator("#file-rows tr")).to_have_count(3)
+    page.click("#tools-link")
+    page.wait_for_url("**/tools.html")
+    expect(page.locator(".tool-card")).to_have_count(14)
+    if os.environ.get("PDFMASTER_SCREENSHOT_DIR"):
+        page.screenshot(path=os.path.join(os.environ["PDFMASTER_SCREENSHOT_DIR"], "tools.png"))
+    result = page.locator("#tool-result")
+    card = lambda name: page.click(f".tool-card[data-tool={name}]")
+    run = lambda: page.click("#tool-run")
+    close = lambda: page.click("#tool-close")
+
+    # merge in the order the documents are ticked
+    card("merge")
+    page.locator(".doc-row", has_text="beta.pdf").locator("input").check()
+    page.locator(".doc-row", has_text="alpha.pdf").locator("input").check()
+    expect(page.locator(".doc-row", has_text="alpha.pdf").locator(".doc-order")).to_have_text("2")
+    page.fill("#f-name", "Joined")
+    run()
+    expect(result).to_contain_text("Merged into a new document.")
+    expect(result.locator("a")).to_have_text("Open Joined.pdf")
+    close()
+
+    # watermark and page numbers change the document itself; errors are shown in the dialog
+    card("watermark")
+    page.select_option("#f-document_id", label="Joined.pdf (3 pages)")
+    run()
+    expect(result).to_contain_text("Watermark added.")
+    close()
+    card("numbers")
+    page.select_option("#f-document_id", label="Joined.pdf (3 pages)")
+    page.fill("#f-pages", "2-9")
+    run()
+    expect(result).to_have_class("tool-result failed")
+    expect(result).to_contain_text("only 3 pages")
+    page.fill("#f-pages", "all")
+    run()
+    expect(result).to_contain_text("Page numbers added.")
+    close()
+
+    # downloads and pictures
+    card("to-text")
+    page.select_option("#f-document_id", label="Joined.pdf (3 pages)")
+    with page.expect_download() as dl:
+        run()
+    text = Path(dl.value.path()).read_text()
+    assert dl.value.suggested_filename == "Joined.txt" and "Beta one" in text and "DRAFT" in text and "Page 3 of 3" in text
+    close()
+    card("images-to-pdf")
+    page.set_input_files("#f-files", str(tmp_path / "photo.png"))
+    run()
+    expect(result.locator("a")).to_have_text("Open Images.pdf")
+    close()
+    card("split")
+    page.select_option("#f-document_id", label="Joined.pdf (3 pages)")
+    page.fill("#f-ranges", "1, 2-3")
+    run()
+    expect(result).to_contain_text("Created 2 documents.")
+    expect(result.locator("a")).to_have_count(2)
+
+    # editor: a link box, then the PDF's own form fields
+    result.locator("a", has_text="pages 2-3").click()
+    page.wait_for_url("**/editor.html?id=*")
+    expect(page.locator("#status")).to_have_text("Ready")
+    page.click("#fit-page")
+    box = page.locator(".page[data-page='1']").bounding_box()
+    k = box["width"] / 612
+    page.click("#edit-tools button[data-tool=link]")
+    page.mouse.move(box["x"] + 72 * k, box["y"] + 80 * k); page.mouse.down()
+    page.mouse.move(box["x"] + 120 * k, box["y"] + 95 * k, steps=3); page.mouse.move(box["x"] + 172 * k, box["y"] + 110 * k, steps=3)
+    page.mouse.up()
+    page.fill("#link-url", "example.com/docs")
+    page.click("#link-dialog button[value=ok]")
+    expect(page.locator("#edit-count")).to_have_text("1 unsaved edit")
+    page.click("#edit-form")                      # saves the pending link first, then finds no form here
+    expect(page.locator(".pm-toast", has_text="no fillable form fields")).to_be_visible()
+    expect(page.locator("#status")).to_have_text("All changes saved")
+    with page.expect_download() as dl:
+        page.click("#download")
+    link = PdfReader(io.BytesIO(Path(dl.value.path()).read_bytes())).pages[0]["/Annots"][0].get_object()
+    assert link["/A"]["/URI"] == "https://example.com/docs"
+    assert all(abs(float(a) - b) < 2 for a, b in zip(link["/Rect"], (72, 682, 172, 712)))
+
+    page.goto("/dashboard.html")
+    page.locator("#file-rows tr", has_text="form.pdf").get_by_role("link", name="Open").click()
+    expect(page.locator("#status")).to_have_text("Ready")
+    page.click("#edit-form")
+    fields = page.locator("#form-fields .form-row")
+    expect(fields).to_have_count(2)
+    fields.filter(has_text="full_name").locator("input").fill("Asha Rao")
+    fields.filter(has_text="agree").locator("input").check()
+    page.click("#form-dialog button[value=ok]")
+    expect(page.locator("#status")).to_have_text("All changes saved")
+    with page.expect_download() as dl:
+        page.click("#download")
+    values = PdfReader(io.BytesIO(Path(dl.value.path()).read_bytes())).get_fields()
+    assert values["full_name"]["/V"] == "Asha Rao" and values["agree"]["/V"] != "/Off"
+    page.click("#more-tools")
+    page.wait_for_url("**/tools.html?doc=*")
     assert page.problems == [], page.problems

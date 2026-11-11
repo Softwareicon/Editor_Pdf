@@ -136,6 +136,25 @@ body { color: var(--ink); background: var(--bg); font-family: system-ui, -apple-
 .edit-textbox { position: absolute; margin: 0; padding: 0; border: 0; outline: 1px dashed #2563eb; outline-offset: 2px; background: rgba(255, 255, 255, .75);
   line-height: 1.2; white-space: pre; overflow: hidden; resize: none; min-width: 1em; z-index: 5; }
 .sign-dialog { width: min(94vw, 560px); }
+.edit-link { fill: rgba(37, 99, 235, .12); stroke: #2563eb; }
+.form-dialog { width: min(94vw, 520px); }
+.form-fields { max-height: 55vh; overflow-y: auto; display: grid; gap: .65rem; padding-right: .25rem; }
+.form-row.check { display: flex; gap: .5rem; align-items: center; }
+.form-row.check .form-label { margin: 0; }
+.form-row .form-label { font-size: .82rem; overflow-wrap: anywhere; }
+
+/* ---- tools page ---- */
+.tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .9rem; }
+.tool-card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; text-align: left; display: grid; gap: .3rem; align-content: start; color: var(--ink); transition: border-color .15s, box-shadow .15s; }
+.tool-card:hover, .tool-card:focus-visible { border-color: var(--brand); box-shadow: 0 4px 14px rgba(28, 35, 48, .08); }
+.tool-card span { color: var(--muted); font-size: .86rem; }
+.tool-dialog { width: min(94vw, 520px); max-height: 92vh; overflow-y: auto; }
+.tool-result { background: #eaf6ee; border: 1px solid #b9e0c5; border-radius: 8px; padding: .7rem .9rem; font-size: .92rem; }
+.tool-result.failed { background: #fbe9e7; border-color: #e3a59d; color: #8a1f15; }
+.doc-pick { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: .4rem .6rem; display: grid; gap: .3rem; }
+.doc-row { display: flex; gap: .5rem; align-items: center; font-size: .9rem; margin: 0; overflow-wrap: anywhere; }
+.doc-order { min-width: 1.3rem; height: 1.3rem; border-radius: 50%; background: var(--brand); color: #fff; font-size: .72rem; font-weight: 700; display: grid; place-items: center; }
+.doc-order:empty { background: transparent; }
 #sign-canvas { width: 100%; height: auto; aspect-ratio: 1000 / 360; border: 1px dashed #9aa3b5; border-radius: 8px; background: #fff; touch-action: none; cursor: crosshair; display: block; }
 
 @media (max-width: 760px) {

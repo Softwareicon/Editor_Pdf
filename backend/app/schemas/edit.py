@@ -33,6 +33,9 @@ class TextItem(_Item):
     font: Literal["helvetica", "times", "courier"] = "helvetica"
     bold: bool = False
     italic: bool = False
+    align: Literal["left", "center", "right"] = "left"
+    rotate: float = Field(default=0, ge=-360, le=360, description="Anticlockwise, about the start of the first baseline")
+    opacity: float = Field(default=1, ge=0.05, le=1)
     _c = field_validator("color")(_color)
 
     @field_validator("text")
@@ -112,7 +115,24 @@ class ImageItem(_Item):
         return value
 
 
-EditItem = Annotated[Union[TextItem, ShapeItem, LineItem, InkItem, ImageItem], Field(discriminator="type")]
+class LinkItem(_Item):
+    type: Literal["link"]
+    x: Coord
+    y: Coord
+    w: Extent
+    h: Extent
+    url: str = Field(min_length=4, max_length=2000)
+
+    @field_validator("url")
+    @classmethod
+    def _safe_scheme(cls, value: str) -> str:
+        value = value.strip()
+        if not re.match(r"^(https?://|mailto:)[^\s<>\x00-\x1f]+$", value, re.I):
+            raise ValueError("links must start with http://, https:// or mailto:")
+        return value
+
+
+EditItem = Annotated[Union[TextItem, ShapeItem, LineItem, InkItem, ImageItem, LinkItem], Field(discriminator="type")]
 
 
 class ApplyEditsRequest(BaseModel):

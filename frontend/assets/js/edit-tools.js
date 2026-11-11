@@ -104,6 +104,13 @@ export function createEditTools(ctx) {
       const line = svg("polyline", { points: item.points.map((p) => p.join(",")).join(" "), fill: "none", stroke: item.color,
                                      "stroke-width": item.width, "stroke-linecap": "round", "stroke-linejoin": "round" });
       g.append(line, hit(line));
+    } else if (item.type === "link") {
+      const area = svg("rect", { class: "edit-link", x: item.x, y: item.y, width: item.w, height: item.h, "stroke-width": 1 / pxPerPt(),
+                                 "stroke-dasharray": `${4 / pxPerPt()} ${3 / pxPerPt()}` });
+      const tip = svg("title");
+      tip.textContent = item.url || "Link";
+      area.append(tip);
+      g.append(area);
     } else if (item.type === "image") {
       g.append(svg("image", { href: item.data, x: item.x, y: item.y, width: item.w, height: item.h, preserveAspectRatio: "none" }));
     }
@@ -239,6 +246,7 @@ export function createEditTools(ctx) {
       case "strike": case "underline": return { ...base, type: "rect", kind: tool, x: pt.x, y: pt.y, w: 0, h: 0, fill: prop.color(), stroke: null, stroke_width: 1, opacity: 0.15 };
       case "rect": case "ellipse": return { ...base, type: tool, x: pt.x, y: pt.y, w: 0, h: 0, fill: prop.fill(), stroke: prop.color(), stroke_width: prop.width(), opacity: 1 };
       case "line": case "arrow": return { ...base, type: "line", x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y, color: prop.color(), width: prop.width(), arrow: tool === "arrow" };
+      case "link": return { ...base, type: "link", x: pt.x, y: pt.y, w: 0, h: 0, url: "" };
       case "pen": return { ...base, type: "ink", points: [[pt.x, pt.y]], color: prop.color(), width: prop.width() };
       default: return null;
     }
@@ -330,6 +338,7 @@ export function createEditTools(ctx) {
     }
     changed();
     if (!STICKY_TOOLS.has(tool)) { setTool("select"); select(item.id); }
+    if (item.type === "link") askLink(item, true);
   }
 
   // ---------- text box ----------
@@ -380,6 +389,35 @@ export function createEditTools(ctx) {
       setTool("select");
       select(created.id);
     }
+  }
+
+  // ---------- links ----------
+  let linking = null; // { item, isNew } while the address dialog is open
+  function askLink(item, isNew) {
+    linking = { item, isNew };
+    $("link-url").value = item.url;
+    $("link-dialog").returnValue = "cancel";
+    $("link-dialog").showModal();
+    $("link-url").focus();
+  }
+  function setUpLinks() {
+    $("link-dialog").addEventListener("close", () => {
+      if (!linking) return;
+      const { item, isNew } = linking;
+      linking = null;
+      let url = $("link-url").value.trim();
+      if ($("link-dialog").returnValue !== "ok") { if (isNew) remove(item.id); return; }
+      if (/^[^\s@:/]+@[^\s@/]+\.[^\s@/]+$/.test(url)) url = `mailto:${url}`;
+      else if (url && !/^[a-z][a-z0-9+.-]*:/i.test(url)) url = `https://${url}`;
+      if (!/^(https?:\/\/|mailto:)[^\s<>]+$/i.test(url) || url.length > 2000) {
+        toast("Enter a web address such as https://example.com or an email address");
+        if (isNew) remove(item.id);
+        return;
+      }
+      item.url = url;
+      renderPage(item.page);
+      changed();
+    });
   }
 
   // ---------- changing text that is already in the PDF ----------
@@ -583,6 +621,7 @@ export function createEditTools(ctx) {
   pagesEl.addEventListener("dblclick", (e) => {
     const item = enabled && tool === "select" ? find(e.target.closest("[data-id]")?.dataset.id) : null;
     if (item?.type === "text") openEditor(item.page, item);
+    else if (item?.type === "link") askLink(item, false);
   });
   for (const b of document.querySelectorAll("#edit-tools button")) b.addEventListener("click", () => setTool(b.dataset.tool));
   for (const id of ["edit-color", "edit-size", "edit-width", "edit-font", "edit-fill"]) $(id).addEventListener("input", applyProps);
@@ -594,6 +633,7 @@ export function createEditTools(ctx) {
   $("discard-edits").addEventListener("click", clear);
   setUpSignaturePad();
   setUpReplace();
+  setUpLinks();
   document.addEventListener("keydown", (e) => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); if (items.length) { closeEditor(true); ctx.save(); } }

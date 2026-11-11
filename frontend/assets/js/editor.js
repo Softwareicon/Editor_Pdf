@@ -4,6 +4,7 @@
 import * as pdfjsLib from "../vendor/pdfjs/pdf.min.mjs";
 import { api, formatBytes, requireUser, toast, uploadPdf } from "./api.js";
 import { createEditTools } from "./edit-tools.js";
+import { setUpFormFill } from "./form-fill.js";
 
 const VENDOR = new URL("../vendor/pdfjs/", import.meta.url).href;
 pdfjsLib.GlobalWorkerOptions.workerSrc = `${VENDOR}pdf.worker.min.mjs`;
@@ -622,6 +623,9 @@ viewer.addEventListener("wheel", (e) => {
   e.preventDefault();
   if (e.deltaY < 0) zoomIn(); else zoomOut();
 }, { passive: false });
+
+setUpFormFill({ state, api, toast, edit, beforeOpen: () => saveEdits() });
+$("more-tools").addEventListener("click", () => { location.href = `tools.html?doc=${encodeURIComponent(state.docId || "")}`; });
 
 window.addEventListener("beforeunload", (e) => { if (edits.hasPending()) e.preventDefault(); });
 

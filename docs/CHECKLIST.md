@@ -47,8 +47,10 @@ Part B2 — editor parity, first batch (complete)
 - [x] New blank document from the dashboard
 - [x] Tests: 42 backend, 9 browser
 
-Part B3 — not started
-- [ ] Fill existing PDF form fields; create form fields; add and edit links
+Part B3 — forms and links (complete)
+- [x] Fill the PDF's own form fields (text, multi-line, check box, radio, choice)
+- [x] Link boxes to web and email addresses
+- [ ] Create new form fields; edit links that already exist in the PDF
 - [ ] **Java engine (PDFBox).** Blocked in the build environment: Maven Central was unreachable, so the
       engine could not be compiled or tested there. Page management therefore uses pypdf (BSD), which
       handles it well. See "Text editing engine" in ARCHITECTURE.md for the decision this forces.
@@ -60,7 +62,11 @@ Part B3 — not started
 - [ ] Drawn / typed / image signatures (visual only — labelled as such)
 - [ ] Right-hand properties panel, layer list
 
-## Phase 3 — PDF tools
+## Phase 3 — PDF tools (first set complete, synchronous)
+- [x] Tools page: merge, split (page groups / every N), compress (lossless, balanced, strong), JPG/PNG to PDF,
+      PDF to JPG/PNG (ZIP), PDF to text, page numbers, header & footer, watermark, crop, protect (AES-256),
+      unlock (only with the correct password; never guessed), document properties
+- [x] Tests: 50 backend, 10 browser
 - [ ] Redis job queue + worker, `/api/jobs`, progress polling
 - [ ] Merge, split (range / every N / bookmarks)
 - [ ] Compression (three presets + custom), size report, lossy operations labelled as lossy

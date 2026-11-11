@@ -14,7 +14,7 @@ from . import __version__
 from .config import get_settings
 from .database import SessionLocal
 from .errors import install_error_handlers
-from .routers import auth, documents, edit, editor, pages
+from .routers import auth, documents, edit, editor, pages, tools
 from .security.headers import SecurityHeadersMiddleware
 from .security.tokens import purge_expired_refresh_tokens
 from .services import storage
@@ -63,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(editor.router)
     app.include_router(pages.router)
     app.include_router(edit.router)
+    app.include_router(tools.router)
 
     @app.get("/api/health", tags=["System"])
     def health():

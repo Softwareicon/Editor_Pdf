@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tools · PDF Master Pro</title>
+  <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="dash-page">
+  <header class="topbar">
+    <a class="brand text-white" href="dashboard.html"><span class="brand-mark">PDF</span> Master Pro</a>
+    <div class="topbar-user">
+      <a class="btn btn-sm btn-outline-light" href="dashboard.html">My files</a>
+      <span id="user-name"></span>
+      <button id="logout" class="btn btn-sm btn-outline-light" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main class="dash-main">
+    <div>
+      <h1 class="h4 mb-1">PDF tools</h1>
+      <p class="text-secondary mb-0">Tools work on the files in <a href="dashboard.html">My files</a>. Upload a PDF there first, then pick a tool.</p>
+    </div>
+    <div id="tool-grid" class="tool-grid"></div>
+  </main>
+
+  <dialog id="tool-dialog" class="pm-dialog tool-dialog">
+    <form id="tool-form" novalidate>
+      <h2 id="tool-title" class="h5"></h2>
+      <p id="tool-desc" class="text-secondary small"></p>
+      <div id="tool-fields"></div>
+      <div id="tool-result" class="tool-result" aria-live="polite" hidden></div>
+      <div class="d-flex justify-content-end gap-2 mt-3">
+        <button id="tool-close" type="button" class="btn btn-outline-secondary">Close</button>
+        <button id="tool-run" type="submit" class="btn btn-brand">Run</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/js/config.js"></script>
+  <script type="module" src="assets/js/tools.js"></script>
+</body>
+</html>

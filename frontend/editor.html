@@ -30,6 +30,7 @@
       <button id="replace-open" type="button" title="Find and replace text in the whole document" disabled>Replace…</button>
     </form>
     <div class="tool-group ms-auto">
+      <button id="more-tools" type="button" title="Merge, split, compress, page numbers, watermark, protect and more">Tools</button>
       <button id="download" type="button" disabled>Download</button>
       <button id="print" type="button" disabled>Print</button>
     </div>
@@ -68,6 +69,7 @@
       <button type="button" data-tool="ellipse" title="Draw an ellipse">Ellipse</button>
       <button type="button" data-tool="line" title="Draw a straight line">Line</button>
       <button type="button" data-tool="arrow" title="Draw an arrow">Arrow</button>
+      <button type="button" data-tool="link" title="Drag a box that opens a web address when clicked">Link</button>
       <button type="button" data-tool="tick" title="Click to place a check mark (for forms)" aria-label="Check mark">&#10003;</button>
       <button type="button" data-tool="cross" title="Click to place a cross (for forms)" aria-label="Cross">&#10007;</button>
     </div>
@@ -75,6 +77,7 @@
       <button id="edit-image" type="button" title="Add a picture from your computer">Image</button>
       <input id="edit-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
       <button id="edit-sign" type="button" title="Draw your signature and place it on the page">Signature</button>
+      <button id="edit-form" type="button" title="Fill in this PDF's form fields">Fill form</button>
     </div>
     <div class="tool-group" id="edit-props">
       <input id="edit-color" type="color" value="#000000" title="Colour" aria-label="Colour">
@@ -158,6 +161,30 @@
           <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
           <button class="btn btn-brand" value="ok">Place signature</button>
         </span>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="link-dialog" class="pm-dialog">
+    <form method="dialog">
+      <h2 class="h5">Link address</h2>
+      <p class="text-secondary small">Clicking the box in the saved PDF opens this web or email address.</p>
+      <input id="link-url" class="form-control mb-4" type="text" maxlength="2000" placeholder="https://example.com" aria-label="Link address" autocomplete="off">
+      <div class="d-flex justify-content-end gap-2">
+        <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn btn-brand" value="ok">Set link</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="form-dialog" class="pm-dialog form-dialog">
+    <form method="dialog">
+      <h2 class="h5">Fill form</h2>
+      <p class="text-secondary small">These are the fields built into this PDF. Saving writes your answers into the document.</p>
+      <div id="form-fields" class="form-fields"></div>
+      <div class="d-flex justify-content-end gap-2 mt-3">
+        <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn btn-brand" value="ok">Save answers</button>
       </div>
     </form>
   </dialog>
