@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · PDF Master Pro</title>
+  <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="auth-page">
+  <main class="auth-card">
+    <div class="brand"><span class="brand-mark">PDF</span> Master Pro</div>
+    <p class="text-secondary mb-4">Sign in to open, view and manage your PDF documents.</p>
+    <div class="auth-tabs" role="tablist">
+      <button id="tab-login" class="active" role="tab" aria-selected="true" type="button">Sign in</button>
+      <button id="tab-register" role="tab" aria-selected="false" type="button">Create account</button>
+    </div>
+    <div id="form-error" class="alert alert-danger py-2" role="alert" hidden></div>
+
+    <form id="login-form" novalidate>
+      <label class="form-label" for="login-email">Email</label>
+      <input class="form-control mb-3" id="login-email" type="email" autocomplete="username" required>
+      <label class="form-label" for="login-password">Password</label>
+      <input class="form-control mb-4" id="login-password" type="password" autocomplete="current-password" required>
+      <button class="btn btn-brand w-100" type="submit">Sign in</button>
+    </form>
+
+    <form id="register-form" novalidate hidden>
+      <label class="form-label" for="register-name">Full name</label>
+      <input class="form-control mb-3" id="register-name" type="text" autocomplete="name" maxlength="200" required>
+      <label class="form-label" for="register-email">Email</label>
+      <input class="form-control mb-3" id="register-email" type="email" autocomplete="username" required>
+      <label class="form-label" for="register-password">Password <span class="text-secondary fw-normal">(at least 10 characters)</span></label>
+      <input class="form-control mb-3" id="register-password" type="password" autocomplete="new-password" minlength="10" required>
+      <label class="form-label" for="register-confirm">Confirm password</label>
+      <input class="form-control mb-4" id="register-confirm" type="password" autocomplete="new-password" required>
+      <button class="btn btn-brand w-100" type="submit">Create account</button>
+    </form>
+  </main>
+  <script src="assets/js/config.js"></script>
+  <script type="module" src="assets/js/login.js"></script>
+</body>
+</html>

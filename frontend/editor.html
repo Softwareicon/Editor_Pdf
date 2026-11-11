@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Viewer · PDF Master Pro</title>
+  <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="editor-page">
+  <header class="toolbar" role="toolbar" aria-label="Document toolbar">
+    <a class="brand" href="dashboard.html" title="Back to my files"><span class="brand-mark">PDF</span></a>
+    <span id="doc-name" class="doc-name"></span>
+    <div class="tool-group">
+      <button id="open" type="button" title="Upload and open another PDF">Open PDF</button>
+      <input id="open-input" type="file" accept="application/pdf,.pdf" hidden>
+    </div>
+    <div class="tool-group">
+      <button id="zoom-out" type="button" title="Zoom out (Ctrl −)" aria-label="Zoom out">−</button>
+      <span id="zoom-label" class="zoom-label" aria-live="polite">100%</span>
+      <button id="zoom-in" type="button" title="Zoom in (Ctrl +)" aria-label="Zoom in">+</button>
+      <button id="fit-page" type="button">Fit page</button>
+      <button id="fit-width" type="button">Fit width</button>
+    </div>
+    <form id="search-form" class="tool-group search" role="search">
+      <input id="search" type="search" placeholder="Search in document" aria-label="Search in document" autocomplete="off">
+      <button id="search-prev" type="button" title="Previous match" aria-label="Previous match" disabled>‹</button>
+      <button id="search-next" type="button" title="Next match" aria-label="Next match" disabled>›</button>
+      <span id="search-count" class="search-count" aria-live="polite"></span>
+    </form>
+    <div class="tool-group ms-auto">
+      <button id="download" type="button" disabled>Download</button>
+      <button id="print" type="button" disabled>Print</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="sidebar" aria-label="Document navigation">
+      <div class="side-tabs" role="tablist">
+        <button data-panel="thumbs" class="active" role="tab" type="button">Pages</button>
+        <button data-panel="outline" role="tab" type="button">Outline</button>
+        <button data-panel="attachments" role="tab" type="button">Attachments</button>
+      </div>
+      <div id="thumbs" class="side-panel"></div>
+      <div id="outline" class="side-panel" hidden></div>
+      <div id="attachments" class="side-panel" hidden></div>
+    </aside>
+    <main id="viewer" class="viewer" tabindex="0" aria-label="Document pages">
+      <div id="pages" class="pages"></div>
+      <div id="message" class="viewer-message" hidden></div>
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <label>Page <input id="page-input" type="number" min="1" value="1" aria-label="Current page" disabled> of <span id="page-total">–</span></label>
+    <span id="status-zoom"></span>
+    <span id="status" class="ms-auto" aria-live="polite">Loading…</span>
+  </footer>
+
+  <dialog id="password-dialog" class="pm-dialog">
+    <form id="password-form" method="dialog">
+      <h2 class="h5">This PDF is password protected</h2>
+      <p id="password-hint" class="text-secondary">Enter the document's password to open it. The password is used only in your browser and is never sent to or stored on the server.</p>
+      <input id="pdf-password" class="form-control mb-4" type="password" aria-label="PDF password" autocomplete="off">
+      <div class="d-flex justify-content-end gap-2">
+        <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn btn-brand" value="ok">Open</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/js/config.js"></script>
+  <script type="module" src="assets/js/editor.js"></script>
+</body>
+</html>

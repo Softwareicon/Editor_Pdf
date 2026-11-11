@@ -1,0 +1,49 @@
+# Phase 1 stack: API (also serving the frontend) + PostgreSQL.
+# Redis, the worker and the Java engine join this file in Phases 2-3 when they are first used.
+# Usage: copy .env.example to .env, set PDFMASTER_SECRET_KEY and POSTGRES_PASSWORD, then `docker compose up --build`.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pdfmaster
+      POSTGRES_DB: pdfmaster
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdfmaster -d pdfmaster"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PDFMASTER_ENVIRONMENT: production
+      PDFMASTER_SECRET_KEY: ${PDFMASTER_SECRET_KEY:?Set PDFMASTER_SECRET_KEY in .env}
+      PDFMASTER_DATABASE_URL: postgresql+psycopg://pdfmaster:${POSTGRES_PASSWORD}@db:5432/pdfmaster
+      PDFMASTER_STORAGE_DIR: /app/storage
+      PDFMASTER_CORS_ORIGINS: ${PDFMASTER_CORS_ORIGINS:-}
+      PDFMASTER_COOKIE_SECURE: ${PDFMASTER_COOKIE_SECURE:-false}
+      PDFMASTER_COOKIE_SAMESITE: ${PDFMASTER_COOKIE_SAMESITE:-strict}
+      PDFMASTER_MAX_UPLOAD_MB: ${PDFMASTER_MAX_UPLOAD_MB:-100}
+    volumes:
+      - storage:/app/storage
+    ports:
+      - "8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  storage:

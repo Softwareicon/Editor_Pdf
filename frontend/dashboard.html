@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My files · PDF Master Pro</title>
+  <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="dash-page">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">PDF</span> Master Pro</div>
+    <div class="topbar-user">
+      <span id="user-name"></span>
+      <button id="logout" class="btn btn-sm btn-outline-light" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main class="dash-main">
+    <section id="dropzone" class="dropzone" aria-label="Upload a PDF">
+      <div>
+        <h1 class="h4 mb-1">Upload a PDF</h1>
+        <p class="text-secondary mb-0">Drag and drop files here, or choose them from your computer. <span id="upload-limit"></span></p>
+      </div>
+      <button id="choose" class="btn btn-brand" type="button">Choose PDF files</button>
+      <input id="file-input" type="file" accept="application/pdf,.pdf" multiple hidden>
+    </section>
+    <ul id="uploads" class="upload-list" aria-live="polite"></ul>
+
+    <section>
+      <div class="d-flex align-items-baseline justify-content-between mb-2">
+        <h2 class="h5 mb-0">Recent files</h2>
+        <span id="file-count" class="text-secondary small"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="table align-middle mb-0" id="files">
+          <thead><tr><th>Name</th><th class="num">Pages</th><th class="num">Size</th><th>Uploaded</th><th class="actions"><span class="visually-hidden">Actions</span></th></tr></thead>
+          <tbody id="file-rows"></tbody>
+        </table>
+        <p id="empty" class="empty" hidden>No documents yet. Upload a PDF to get started.</p>
+      </div>
+      <div class="text-center mt-3"><button id="more" class="btn btn-outline-secondary btn-sm" type="button" hidden>Show more</button></div>
+    </section>
+  </main>
+
+  <dialog id="confirm-delete" class="pm-dialog">
+    <form method="dialog">
+      <h2 class="h5">Delete this document?</h2>
+      <p class="mb-4"><strong id="delete-name"></strong> will be permanently removed from the server. This cannot be undone.</p>
+      <div class="d-flex justify-content-end gap-2">
+        <button class="btn btn-outline-secondary" value="cancel">Cancel</button>
+        <button class="btn btn-danger" value="delete">Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/js/config.js"></script>
+  <script type="module" src="assets/js/dashboard.js"></script>
+</body>
+</html>

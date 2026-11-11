@@ -1,0 +1,32 @@
+# Secrets and local configuration
+.env
+*.pem
+*.key
+*.p12
+*.pfx
+
+# User data: never commit uploads, databases or temporary processing files
+storage/**
+!storage/uploads/
+!storage/processed/
+!storage/temp/
+!storage/**/.gitkeep
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Java / Node / tooling
+target/
+node_modules/
+test-results/
+playwright-report/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
