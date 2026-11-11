@@ -130,7 +130,9 @@ body { color: var(--ink); background: var(--bg); font-family: system-ui, -apple-
 .edit-handle { fill: #fff; stroke: #2563eb; pointer-events: auto; cursor: nwse-resize; }
 .pages[data-tool]:not([data-tool=select]) .page { cursor: crosshair; touch-action: none; user-select: none; }
 .pages[data-tool]:not([data-tool=select]) .edit-item { cursor: crosshair; }
-.pages[data-tool=text] .page { cursor: text; }
+.pages[data-tool=text] .page, .pages[data-tool=edittext] .page { cursor: text; }
+.sign-alt { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: .5rem; align-items: center; margin-top: .75rem; }
+@media (max-width: 560px) { .sign-alt { grid-template-columns: 1fr 1fr; } }
 .edit-textbox { position: absolute; margin: 0; padding: 0; border: 0; outline: 1px dashed #2563eb; outline-offset: 2px; background: rgba(255, 255, 255, .75);
   line-height: 1.2; white-space: pre; overflow: hidden; resize: none; min-width: 1em; z-index: 5; }
 .sign-dialog { width: min(94vw, 560px); }

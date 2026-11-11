@@ -32,7 +32,29 @@ const edits = createEditTools({
   state, pagesEl, viewer, CSS_UNITS,
   onChange: () => { updateTools(); if (edits.hasPending() && !state.busy) setStatus("Unsaved edits — click Save edits to write them into the PDF"); },
   save: () => saveEdits(),
+  textRuns: (n) => textRuns(n),
 });
+
+// Text runs of a page for the "Edit text" and "Replace" tools, in display points (origin top-left, y down).
+async function textRuns(n) {
+  const page = await state.pdf.getPage(n);
+  const vp = page.getViewport({ scale: 1 }), v = vp.transform;
+  const content = await page.getTextContent();
+  return content.items.filter((item) => item.str && item.str.trim()).map((item) => {
+    const m = item.transform;
+    const t = [v[0] * m[0] + v[2] * m[1], v[1] * m[0] + v[3] * m[1], v[0] * m[2] + v[2] * m[3], v[1] * m[2] + v[3] * m[3],
+               v[0] * m[4] + v[2] * m[5] + v[4], v[1] * m[4] + v[3] * m[5] + v[5]];
+    const r = itemRect(vp, item);
+    let name = content.styles[item.fontName]?.fontFamily || "";
+    try { name = `${page.commonObjs.get(item.fontName)?.name || ""} ${name}`; } catch { /* font not loaded yet */ }
+    return {
+      str: item.str, x: r.left, y: r.top, w: r.width, h: r.height, baseline: t[5], size: Math.hypot(t[2], t[3]) || item.height,
+      upright: t[0] > 0 && t[3] < 0 && Math.abs(t[1]) < 0.02 * Math.abs(t[0]) && Math.abs(t[2]) < 0.02 * Math.abs(t[3]),
+      font: /courier|mono|consol/i.test(name) ? "courier" : /times|georgia|garamond|cambria|(^|[^-])\bserif/i.test(name) && !/sans/i.test(name) ? "times" : "helvetica",
+      bold: /bold|black|heavy/i.test(name), italic: /italic|oblique/i.test(name),
+    };
+  });
+}
 function showMessage(text) { $("message").textContent = text; $("message").hidden = false; pagesEl.hidden = true; }
 
 // ---------- loading ----------

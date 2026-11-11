@@ -99,6 +99,12 @@ async function uploadAll(fileList) {
 
 const zone = $("dropzone");
 $("choose").addEventListener("click", () => $("file-input").click());
+$("new-blank").addEventListener("click", async () => {
+  try {
+    const doc = await api("/api/documents/blank", { method: "POST", json: { name: "Untitled", size: "a4", pages: 1 } });
+    location.href = `editor.html?id=${encodeURIComponent(doc.id)}`;
+  } catch (e) { toast(e.message); }
+});
 $("file-input").addEventListener("change", (e) => { uploadAll(e.target.files); e.target.value = ""; });
 for (const type of ["dragenter", "dragover"]) zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.add("over"); });
 for (const type of ["dragleave", "drop"]) zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.remove("over"); });

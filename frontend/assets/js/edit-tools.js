@@ -12,7 +12,13 @@ const FAMILIES = {
 };
 // Characters the built-in PDF fonts can show. Any other text (Hindi, emoji, …) is saved as a picture of the text.
 const CP1252 = /^[\n\x20-\x7E\xA0-\xFF€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]*$/;
-const STICKY_TOOLS = new Set(["pen", "highlight", "whiteout"]); // stay active after each stroke
+const STICKY_TOOLS = new Set(["pen", "highlight", "whiteout", "strike", "underline", "tick", "cross"]);
+const SIGNATURE_FONTS = [
+  'italic 96px "Brush Script MT", "Segoe Script", "Lucida Handwriting", "Apple Chancery", cursive',
+  '96px "Segoe Script", "Lucida Handwriting", "Bradley Hand", cursive',
+  'italic 96px Georgia, "Times New Roman", serif',
+];
+const hex = (r, g, b) => "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join(""); // stay active after each stroke
 const MAX_IMAGE_SIDE = 2000;
 
 const $ = (id) => document.getElementById(id);
@@ -57,6 +63,7 @@ export function createEditTools(ctx) {
     font: () => $("edit-font").value,
     bold: () => $("edit-bold").classList.contains("active"),
     italic: () => $("edit-italic").classList.contains("active"),
+    fill: () => ($("edit-fill-on").classList.contains("active") ? $("edit-fill").value : null),
   };
 
   // ---------- drawing the layer ----------
@@ -151,6 +158,7 @@ export function createEditTools(ctx) {
   function update(editable) {
     enabled = editable;
     for (const b of document.querySelectorAll("#edit-tools button, #edit-insert button")) b.disabled = !editable;
+    $("replace-open").disabled = !editable;
     for (const c of document.querySelectorAll("#edit-props input, #edit-props select, #edit-props button")) c.disabled = !editable;
     $("edit-delete").disabled = !editable || !find(selectedId);
     $("save-edits").disabled = $("discard-edits").disabled = !editable || !items.length;
@@ -181,6 +189,10 @@ export function createEditTools(ctx) {
         $("edit-bold").classList.toggle("active", item.bold);
         $("edit-italic").classList.toggle("active", item.italic);
       }
+      if ((item.type === "rect" || item.type === "ellipse") && !item.kind) {
+        $("edit-fill-on").classList.toggle("active", Boolean(item.fill));
+        if (item.fill) $("edit-fill").value = item.fill;
+      }
     }
     $("edit-delete").disabled = !enabled || !item;
   }
@@ -207,7 +219,7 @@ export function createEditTools(ctx) {
     if (!item) return;
     if (item.type === "text") Object.assign(item, { color: prop.color(), size: prop.size(), font: prop.font(), bold: prop.bold(), italic: prop.italic() });
     else if (item.type === "line" || item.type === "ink") Object.assign(item, { color: prop.color(), width: prop.width() });
-    else if ((item.type === "rect" || item.type === "ellipse") && item.stroke) Object.assign(item, { stroke: prop.color(), stroke_width: prop.width() });
+    else if ((item.type === "rect" || item.type === "ellipse") && !item.kind) Object.assign(item, { stroke: prop.color(), stroke_width: prop.width(), fill: prop.fill() });
     renderPage(item.page);
   }
 
@@ -224,7 +236,8 @@ export function createEditTools(ctx) {
     switch (tool) {
       case "whiteout": return { ...base, type: "rect", kind: "whiteout", x: pt.x, y: pt.y, w: 0, h: 0, fill: "#ffffff", stroke: null, stroke_width: 1, opacity: 1 };
       case "highlight": return { ...base, type: "rect", kind: "highlight", x: pt.x, y: pt.y, w: 0, h: 0, fill: "#ffe600", stroke: null, stroke_width: 1, opacity: 0.4 };
-      case "rect": case "ellipse": return { ...base, type: tool, x: pt.x, y: pt.y, w: 0, h: 0, fill: null, stroke: prop.color(), stroke_width: prop.width(), opacity: 1 };
+      case "strike": case "underline": return { ...base, type: "rect", kind: tool, x: pt.x, y: pt.y, w: 0, h: 0, fill: prop.color(), stroke: null, stroke_width: 1, opacity: 0.15 };
+      case "rect": case "ellipse": return { ...base, type: tool, x: pt.x, y: pt.y, w: 0, h: 0, fill: prop.fill(), stroke: prop.color(), stroke_width: prop.width(), opacity: 1 };
       case "line": case "arrow": return { ...base, type: "line", x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y, color: prop.color(), width: prop.width(), arrow: tool === "arrow" };
       case "pen": return { ...base, type: "ink", points: [[pt.x, pt.y]], color: prop.color(), width: prop.width() };
       default: return null;
@@ -247,6 +260,17 @@ export function createEditTools(ctx) {
         const item = find(selectedId);
         drag = { mode: "move", n, item, start: toPoint(n, e), orig: structuredClone(item), moved: false };
       } else { select(null); return; }
+    } else if (tool === "edittext") {
+      e.preventDefault();
+      editRunAt(n, toPoint(n, e));
+      return;
+    } else if (tool === "tick" || tool === "cross") {
+      e.preventDefault();
+      const { x, y } = toPoint(n, e, true), s = round(prop.size() * 0.45);
+      const points = tool === "tick" ? [[x - s, y], [round(x - s * 0.3), round(y + s * 0.7)], [x + s, round(y - s * 0.8)]]
+        : [[x - s, y - s], [x + s, y + s], [x, y], [x - s, y + s], [x + s, y - s]];
+      add({ type: "ink", page: n, points, color: prop.color(), width: Math.max(1.2, prop.width()) });
+      return;
     } else if (tool === "text") {
       e.preventDefault();
       const pt = toPoint(n, e, true), size = prop.size();
@@ -297,6 +321,13 @@ export function createEditTools(ctx) {
       : item.type === "line" ? Math.hypot(item.x2 - item.x1, item.y2 - item.y1) < 3
       : item.w < 3 || item.h < 3;
     if (tooSmall) { items = items.filter((i) => i !== item); renderPage(n); return; }
+    if (item.kind === "strike" || item.kind === "underline") { // the dragged box marks the text line; keep only the stroke
+      const y = round(item.kind === "strike" ? item.y + item.h * 0.55 : item.y + item.h);
+      const line = { id: item.id, page: n, type: "line", x1: item.x, y1: y, x2: round(item.x + item.w), y2: y, color: item.fill,
+                     width: round(clamp(item.h * 0.07, 0.75, 3)), arrow: false };
+      items[items.indexOf(item)] = line;
+      renderPage(n);
+    }
     changed();
     if (!STICKY_TOOLS.has(tool)) { setTool("select"); select(item.id); }
   }
@@ -351,6 +382,87 @@ export function createEditTools(ctx) {
     }
   }
 
+  // ---------- changing text that is already in the PDF ----------
+  // The original run is covered with a box in the page's background colour and retyped on top as a new text object.
+  function sampleColours(n, run) {
+    const fallback = { bg: "#ffffff", fg: "#000000" };
+    const p = state.pages[n - 1], canvas = p?.canvas;
+    if (!canvas?.width) return fallback;
+    try {
+      const k = canvas.width / p.w;
+      const x0 = clamp(Math.floor((run.x - 1) * k), 0, canvas.width - 1), y0 = clamp(Math.floor(run.y * k), 0, canvas.height - 1);
+      const w = clamp(Math.ceil((run.w + 2) * k), 1, canvas.width - x0), h = clamp(Math.ceil(run.h * k), 1, canvas.height - y0);
+      if (w * h > 4_000_000) return fallback;
+      const d = canvas.getContext("2d", { alpha: false }).getImageData(x0, y0, w, h).data;
+      const tally = new Map();
+      for (const row of [0, h - 1]) for (let x = 0; x < w; x++) { // the background is the commonest colour along the top and bottom edges
+        const i = (row * w + x) * 4, key = (d[i] >> 2 << 16) | (d[i + 1] >> 2 << 8) | (d[i + 2] >> 2);
+        const e = tally.get(key) || { n: 0, r: d[i], g: d[i + 1], b: d[i + 2] };
+        e.n++; tally.set(key, e);
+      }
+      const bg = [...tally.values()].sort((a, b) => b.n - a.n)[0];
+      let far = 0, fg = null;
+      for (let i = 0; i < d.length; i += 4) { // the text colour is the pixel that differs most from the background
+        const dist = Math.abs(d[i] - bg.r) + Math.abs(d[i + 1] - bg.g) + Math.abs(d[i + 2] - bg.b);
+        if (dist > far) { far = dist; fg = [d[i], d[i + 1], d[i + 2]]; }
+      }
+      return { bg: hex(bg.r, bg.g, bg.b), fg: far > 90 ? hex(...fg) : fallback.fg };
+    } catch { return fallback; }
+  }
+
+  function replaceRun(n, run, text) {
+    const { bg, fg } = sampleColours(n, run);
+    const cover = add({ type: "rect", kind: "whiteout", page: n, x: round(run.x - 1), y: round(run.y), w: round(run.w + 2), h: round(run.h),
+                        fill: bg, stroke: null, stroke_width: 1, opacity: 1 });
+    if (!text.trim()) return cover;
+    return add({ type: "text", page: n, x: round(run.x), y: round(run.baseline - ASCENT * run.size), text,
+                 size: clamp(Math.round(run.size * 2) / 2, 4, 400), color: fg, font: run.font, bold: run.bold, italic: run.italic });
+  }
+
+  async function editRunAt(n, pt) {
+    let runs;
+    try { runs = await ctx.textRuns(n); } catch { runs = []; }
+    const run = runs.findLast((r) => r.upright && pt.x >= r.x - 2 && pt.x <= r.x + r.w + 2 && pt.y >= r.y - 2 && pt.y <= r.y + r.h + 2);
+    if (!run) return toast("Click on a line of text to change it. Scanned pages and pictures of text have no editable text: cover them with Whiteout and use Text instead.");
+    const item = replaceRun(n, run, run.str);
+    setTool("select");
+    select(item.id);
+    openEditor(n, item);
+  }
+
+  async function replaceAll(find, replacement) {
+    const pattern = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    let count = 0, places = 0;
+    for (let n = 1; n <= state.pages.length; n++) {
+      for (const run of await ctx.textRuns(n)) {
+        const hits = run.upright ? (run.str.match(pattern) || []).length : 0;
+        if (!hits) continue;
+        replaceRun(n, run, run.str.replace(pattern, () => replacement));
+        count += hits; places++;
+      }
+    }
+    return { count, places };
+  }
+
+  function setUpReplace() {
+    const dialog = $("replace-dialog");
+    $("replace-open").addEventListener("click", () => {
+      $("replace-find").value = $("search").value.trim();
+      dialog.returnValue = "cancel";
+      dialog.showModal();
+      $("replace-find").focus();
+    });
+    dialog.addEventListener("close", async () => {
+      const find = $("replace-find").value.trim();
+      if (dialog.returnValue !== "ok" || !find || !enabled) return;
+      try {
+        const { count, places } = await replaceAll(find, $("replace-with").value);
+        if (!count) return toast(`"${find}" was not found in the document's text`);
+        toast(`Replaced ${count} occurrence${count === 1 ? "" : "s"} in ${places} place${places === 1 ? "" : "s"}. Check the pages, then click Save edits.`, "ok");
+      } catch (e) { console.error(e); toast("Find and replace could not read this document's text"); }
+    });
+  }
+
   // ---------- images & signatures ----------
   function place(dataUrl, pxW, pxH, wantedWidth) {
     const n = state.current, p = state.pages[n - 1];
@@ -365,7 +477,7 @@ export function createEditTools(ctx) {
     select(item.id);
   }
 
-  async function insertImageFile(file) {
+  async function insertImageFile(file, wantedWidth = 0) {
     const url = URL.createObjectURL(file);
     try {
       const img = await loadImage(url);
@@ -373,7 +485,7 @@ export function createEditTools(ctx) {
       const canvas = Object.assign(document.createElement("canvas"), { width: Math.max(1, Math.round(img.naturalWidth * scale)), height: Math.max(1, Math.round(img.naturalHeight * scale)) });
       canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
       const jpeg = file.type === "image/jpeg";
-      place(canvas.toDataURL(jpeg ? "image/jpeg" : "image/png", 0.9), canvas.width, canvas.height, canvas.width * 0.75);
+      place(canvas.toDataURL(jpeg ? "image/jpeg" : "image/png", 0.9), canvas.width, canvas.height, wantedWidth || canvas.width * 0.75);
     } catch (e) { toast(e.message || "This image could not be added"); }
     finally { URL.revokeObjectURL(url); }
   }
@@ -394,10 +506,30 @@ export function createEditTools(ctx) {
     canvas.addEventListener("pointermove", (e) => { if (!drawing) return; const [x, y] = at(e); pen.lineTo(x, y); pen.stroke(); grow(x, y); });
     for (const type of ["pointerup", "pointercancel"]) canvas.addEventListener(type, () => { drawing = false; });
     $("sign-clear").addEventListener("click", clear);
-    $("edit-sign").addEventListener("click", () => { clear(); dialog.returnValue = "cancel"; dialog.showModal(); });
+    $("edit-sign").addEventListener("click", () => { clear(); $("sign-name").value = ""; dialog.returnValue = "cancel"; dialog.showModal(); });
+    $("sign-upload").addEventListener("click", () => $("sign-upload-input").click());
+    $("sign-upload-input").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      dialog.close("cancel");
+      insertImageFile(file, 160);
+    });
     dialog.addEventListener("close", () => {
       if (dialog.returnValue !== "ok") return;
-      if (!box) return toast("Draw your signature first");
+      const name = $("sign-name").value.trim();
+      if (!box && name) { // typed signature in a handwriting-style font
+        const font = SIGNATURE_FONTS[Number($("sign-style").value)] || SIGNATURE_FONTS[0];
+        const probe = document.createElement("canvas").getContext("2d");
+        probe.font = font;
+        const tw = Math.min(4000, Math.ceil(probe.measureText(name).width) + 40), th = 150;
+        const typed = Object.assign(document.createElement("canvas"), { width: tw, height: th });
+        const ink = typed.getContext("2d");
+        Object.assign(ink, { font, fillStyle: "#0b1f6b", textBaseline: "alphabetic" });
+        ink.fillText(name, 20, 105);
+        return place(typed.toDataURL("image/png"), tw, th, Math.min(260, tw * 0.3));
+      }
+      if (!box) return toast("Draw your signature or type your name first");
       const pad = 8, x = Math.max(0, Math.floor(box[0] - pad)), y = Math.max(0, Math.floor(box[1] - pad));
       const w = Math.min(canvas.width, Math.ceil(box[2] + pad)) - x, h = Math.min(canvas.height, Math.ceil(box[3] + pad)) - y;
       const out = Object.assign(document.createElement("canvas"), { width: w, height: h });
@@ -425,7 +557,7 @@ export function createEditTools(ctx) {
   function buildPayload() {
     return items.map((item) => {
       if (item.type === "text" && !CP1252.test(item.text)) return textAsImage(item);
-      const { id, kind, ...rest } = item;
+      const { id, kind, cover, ...rest } = item;
       return rest;
     });
   }
@@ -453,14 +585,15 @@ export function createEditTools(ctx) {
     if (item?.type === "text") openEditor(item.page, item);
   });
   for (const b of document.querySelectorAll("#edit-tools button")) b.addEventListener("click", () => setTool(b.dataset.tool));
-  for (const id of ["edit-color", "edit-size", "edit-width", "edit-font"]) $(id).addEventListener("input", applyProps);
-  for (const id of ["edit-bold", "edit-italic"]) $(id).addEventListener("click", () => { $(id).classList.toggle("active"); applyProps(); });
+  for (const id of ["edit-color", "edit-size", "edit-width", "edit-font", "edit-fill"]) $(id).addEventListener("input", applyProps);
+  for (const id of ["edit-bold", "edit-italic", "edit-fill-on"]) $(id).addEventListener("click", () => { $(id).classList.toggle("active"); applyProps(); });
   $("edit-delete").addEventListener("click", () => remove(selectedId));
   $("edit-image").addEventListener("click", () => $("edit-image-input").click());
   $("edit-image-input").addEventListener("change", (e) => { const file = e.target.files[0]; e.target.value = ""; if (file) insertImageFile(file); });
   $("save-edits").addEventListener("click", () => ctx.save());
   $("discard-edits").addEventListener("click", clear);
   setUpSignaturePad();
+  setUpReplace();
   document.addEventListener("keydown", (e) => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); if (items.length) { closeEditor(true); ctx.save(); } }

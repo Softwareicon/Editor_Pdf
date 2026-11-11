@@ -39,7 +39,16 @@ Part B1 — overlay editing (complete)
 - [x] Objects stay editable until "Save edits"; a save is one new version, so Undo/Redo work
 - [x] Tests: 5 more backend tests (41 total), 1 more browser test (8 total)
 
-Part B2 — not started
+Part B2 — editor parity, first batch (complete)
+- [x] Edit existing text: click a line to cover it (in the page's own background colour) and retype it in place
+- [x] Find and replace across the document (same cover-and-retype method; matches split across text runs are skipped)
+- [x] Strike-through, underline, check mark and cross, fill colour for rectangles and ellipses
+- [x] Signature by typing a name (three styles) or uploading an image, as well as drawing
+- [x] New blank document from the dashboard
+- [x] Tests: 42 backend, 9 browser
+
+Part B3 — not started
+- [ ] Fill existing PDF form fields; create form fields; add and edit links
 - [ ] **Java engine (PDFBox).** Blocked in the build environment: Maven Central was unreachable, so the
       engine could not be compiled or tested there. Page management therefore uses pypdf (BSD), which
       handles it well. See "Text editing engine" in ARCHITECTURE.md for the decision this forces.

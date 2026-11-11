@@ -127,3 +127,21 @@ def test_pagination(client, auth, pdf_bytes):
     page = client.get("/api/documents?limit=2&offset=2", headers=auth).json()
     assert page["total"] == 3 and len(page["items"]) == 1
     assert client.get("/api/documents?limit=0", headers=auth).status_code == 422
+
+
+def test_blank_document(client, auth):
+    import io
+
+    from pypdf import PdfReader
+
+    r = client.post("/api/documents/blank", headers=auth, json={"name": "Notes", "size": "a4", "landscape": True, "pages": 2})
+    assert r.status_code == 201, r.text
+    doc = r.json()
+    assert doc["original_filename"] == "Notes.pdf" and doc["page_count"] == 2
+    pages = PdfReader(io.BytesIO(client.get(f"/api/documents/{doc['id']}/download", headers=auth).content)).pages
+    assert len(pages) == 2 and round(float(pages[0].mediabox.width)) == 842 and round(float(pages[0].mediabox.height)) == 595
+    assert client.post("/api/documents/blank", headers=auth, json={"pages": 0}).status_code == 422
+    assert client.post("/api/documents/blank", json={}).status_code == 401
+    edit = client.post("/api/edit/apply", headers=auth, json={"document_id": doc["id"], "items": [
+        {"type": "text", "page": 1, "x": 50, "y": 50, "text": "First words"}]})
+    assert edit.status_code == 200 and edit.json()["current_version"] == 2

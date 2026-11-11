@@ -1,6 +1,7 @@
+from typing import Literal
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentOut(BaseModel):
@@ -63,3 +64,10 @@ class VersionsOut(BaseModel):
     document_id: str
     current_version: int
     versions: list[VersionOut]
+
+
+class BlankDocumentRequest(BaseModel):
+    name: str = Field(default="Untitled.pdf", max_length=255)
+    size: Literal["a4", "letter", "legal"] = "a4"
+    landscape: bool = False
+    pages: int = Field(default=1, ge=1, le=50)

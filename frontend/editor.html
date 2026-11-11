@@ -27,6 +27,7 @@
       <button id="search-prev" type="button" title="Previous match" aria-label="Previous match" disabled>‹</button>
       <button id="search-next" type="button" title="Next match" aria-label="Next match" disabled>›</button>
       <span id="search-count" class="search-count" aria-live="polite"></span>
+      <button id="replace-open" type="button" title="Find and replace text in the whole document" disabled>Replace…</button>
     </form>
     <div class="tool-group ms-auto">
       <button id="download" type="button" disabled>Download</button>
@@ -57,13 +58,18 @@
     <div class="tool-group" id="edit-tools">
       <button type="button" data-tool="select" title="Select, move and resize what you added (Esc)">Select</button>
       <button type="button" data-tool="text" title="Click on the page and type">Text</button>
+      <button type="button" data-tool="edittext" title="Click a line of existing text to change it">Edit text</button>
       <button type="button" data-tool="whiteout" title="Drag a white box over content to hide it, then add new text on top">Whiteout</button>
       <button type="button" data-tool="highlight" title="Drag over text to highlight it">Highlight</button>
+      <button type="button" data-tool="strike" title="Drag over a line of text to strike it through">Strike</button>
+      <button type="button" data-tool="underline" title="Drag over a line of text to underline it">Underline</button>
       <button type="button" data-tool="pen" title="Draw freehand">Pen</button>
       <button type="button" data-tool="rect" title="Draw a rectangle">Rectangle</button>
       <button type="button" data-tool="ellipse" title="Draw an ellipse">Ellipse</button>
       <button type="button" data-tool="line" title="Draw a straight line">Line</button>
       <button type="button" data-tool="arrow" title="Draw an arrow">Arrow</button>
+      <button type="button" data-tool="tick" title="Click to place a check mark (for forms)" aria-label="Check mark">&#10003;</button>
+      <button type="button" data-tool="cross" title="Click to place a cross (for forms)" aria-label="Cross">&#10007;</button>
     </div>
     <div class="tool-group" id="edit-insert">
       <button id="edit-image" type="button" title="Add a picture from your computer">Image</button>
@@ -86,6 +92,8 @@
       <select id="edit-width" title="Line thickness" aria-label="Line thickness">
         <option value="0.75">Thin</option><option value="1.5" selected>Normal</option><option value="3">Thick</option><option value="6">Heavy</option>
       </select>
+      <button id="edit-fill-on" type="button" title="Fill rectangles and ellipses with a colour">Fill</button>
+      <input id="edit-fill" type="color" value="#fff2a8" title="Fill colour" aria-label="Fill colour">
       <button id="edit-delete" type="button" title="Delete the selected object (Del)" disabled>Delete object</button>
     </div>
     <div class="tool-group ms-auto">
@@ -135,12 +143,36 @@
       <h2 class="h5">Draw your signature</h2>
       <p class="text-secondary small">Use the mouse or your finger. It is placed on the current page as a picture; this is a visual signature, not a certificate-based digital signature.</p>
       <canvas id="sign-canvas" width="1000" height="360" aria-label="Signature drawing area"></canvas>
+      <div class="sign-alt">
+        <label class="form-label mb-0" for="sign-name">or type your name</label>
+        <input id="sign-name" class="form-control form-control-sm" type="text" maxlength="60" autocomplete="off">
+        <select id="sign-style" class="form-select form-select-sm" aria-label="Signature style">
+          <option value="0">Brush</option><option value="1">Script</option><option value="2">Classic</option>
+        </select>
+        <button id="sign-upload" type="button" class="btn btn-outline-secondary btn-sm">Upload image…</button>
+        <input id="sign-upload-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+      </div>
       <div class="d-flex justify-content-between gap-2 mt-3">
         <button id="sign-clear" type="button" class="btn btn-outline-secondary">Clear</button>
         <span class="d-flex gap-2">
           <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
           <button class="btn btn-brand" value="ok">Place signature</button>
         </span>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="replace-dialog" class="pm-dialog">
+    <form method="dialog">
+      <h2 class="h5">Find and replace</h2>
+      <p class="text-secondary small">Every line that contains the text is covered and retyped with the replacement. Review the pages, then click Save edits.</p>
+      <label class="form-label" for="replace-find">Find</label>
+      <input id="replace-find" class="form-control mb-2" type="text" maxlength="200" autocomplete="off" required>
+      <label class="form-label" for="replace-with">Replace with</label>
+      <input id="replace-with" class="form-control mb-4" type="text" maxlength="200" autocomplete="off">
+      <div class="d-flex justify-content-end gap-2">
+        <button class="btn btn-outline-secondary" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn btn-brand" value="ok">Replace all</button>
       </div>
     </form>
   </dialog>

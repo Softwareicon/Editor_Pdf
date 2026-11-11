@@ -11,7 +11,7 @@ from ..config import get_settings
 from ..database import get_db
 from ..errors import ApiError
 from ..models import Document, DocumentVersion, User
-from ..schemas.document import DocumentList, DocumentOut
+from ..schemas.document import BlankDocumentRequest, DocumentList, DocumentOut
 from ..security.deps import client_ip, get_current_user
 from ..services import audit, storage
 from ..services.pdf_inspect import inspect_pdf
@@ -24,6 +24,49 @@ def get_owned_document(document_id: str, db: Session, user: User) -> Document:
     doc = db.query(Document).filter(Document.id == document_id, Document.user_id == user.id).one_or_none()
     if doc is None:
         raise ApiError(404, "document_not_found", "Document not found")
+    return doc
+
+
+PAGE_SIZES = {"a4": (595.28, 841.89), "letter": (612, 792), "legal": (612, 1008)}
+
+
+@router.post("/blank", response_model=DocumentOut, status_code=201)
+def create_blank_document(body: BlankDocumentRequest, request: Request, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    """Start a new document with empty pages (then add text, images and shapes in the editor)."""
+    import uuid
+
+    from pypdf import PdfWriter
+
+    s = get_settings()
+    width, height = PAGE_SIZES[body.size]
+    if body.landscape:
+        width, height = height, width
+    writer = PdfWriter()
+    for _ in range(body.pages):
+        writer.add_blank_page(width=width, height=height)
+    tmp = s.temp_dir / f"{uuid.uuid4().hex}.blank"
+    try:
+        with open(tmp, "wb") as f:
+            writer.write(f)
+        size = tmp.stat().st_size
+        stored, rel_path = storage.commit_upload(tmp, user.id)
+    finally:
+        tmp.unlink(missing_ok=True)
+    doc = Document(user_id=user.id, original_filename=storage.sanitize_filename(body.name), stored_filename=stored,
+                   file_size=size, page_count=body.pages, mime_type="application/pdf", storage_path=rel_path,
+                   processing_status="ready")
+    doc.versions.append(DocumentVersion(version_number=1, storage_path=rel_path, change_description="Blank document",
+                                        page_count=body.pages, file_size=size))
+    db.add(doc)
+    try:
+        db.flush()
+        audit.record(db, "document.create_blank", user.id, doc.id, client_ip(request))
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.secure_delete(rel_path)
+        raise
     return doc
 
 

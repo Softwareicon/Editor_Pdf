@@ -22,7 +22,10 @@
         <h1 class="h4 mb-1">Upload a PDF</h1>
         <p class="text-secondary mb-0">Drag and drop files here, or choose them from your computer. <span id="upload-limit"></span></p>
       </div>
-      <button id="choose" class="btn btn-brand" type="button">Choose PDF files</button>
+      <div class="d-flex gap-2 flex-wrap">
+        <button id="new-blank" class="btn btn-outline-secondary" type="button" title="Start an empty A4 document and add text, images and shapes">New blank document</button>
+        <button id="choose" class="btn btn-brand" type="button">Choose PDF files</button>
+      </div>
       <input id="file-input" type="file" accept="application/pdf,.pdf" multiple hidden>
     </section>
     <ul id="uploads" class="upload-list" aria-live="polite"></ul>

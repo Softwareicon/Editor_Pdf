@@ -432,3 +432,90 @@ def test_content_editing_text_shapes_image_signature_save_and_undo(page, tmp_pat
         page.click("#download")
     assert "Hello World" not in PdfReader(io.BytesIO(Path(dl.value.path()).read_bytes())).pages[0].extract_text()
     assert page.problems == [], page.problems
+
+
+def test_edit_existing_text_replace_marks_typed_signature_and_blank_document(page, tmp_path):
+    import io
+    from pypdf import PdfReader
+
+    pdf = tmp_path / "invoice.pdf"
+    pdf.write_bytes(build_pdf(["Invoice total 100", "Total again"]))
+    sign_up(page, "replace@example.com")
+
+    # a blank document can be started from the dashboard and opens in the editor
+    page.click("#new-blank")
+    page.wait_for_url("**/editor.html?id=*")
+    expect(page.locator("#status")).to_have_text("Ready")
+    expect(page.locator("#doc-name")).to_have_text("Untitled.pdf")
+    expect(page.locator("#page-total")).to_have_text("1")
+    page.goto("/dashboard.html")
+
+    page.set_input_files("#file-input", str(pdf))
+    page.locator("#file-rows tr", has_text="invoice.pdf").get_by_role("link", name="Open").click()
+    expect(page.locator("#status")).to_have_text("Ready")
+    count = page.locator("#edit-count")
+    tool = lambda name: page.click(f"#edit-tools button[data-tool={name}]")
+    page.click("#fit-page")
+    wait_rendered(page, ".page[data-page='1'] canvas")
+    box = page.locator(".page[data-page='1']").bounding_box()
+    k = box["width"] / 612
+    at = lambda x, y: (box["x"] + x * k, box["y"] + y * k)
+
+    # find and replace covers each matching line and retypes it (case-insensitive, all pages)
+    expect(page.locator("#replace-open")).to_be_enabled()
+    page.click("#replace-open")
+    page.fill("#replace-find", "total")
+    page.fill("#replace-with", "Sum")
+    page.click("#replace-dialog button[value=ok]")
+    expect(page.locator(".pm-toast-ok")).to_contain_text("Replaced 2 occurrences in 2 places")
+    expect(count).to_have_text("4 unsaved edits")       # a cover and a text object per place
+    page.click("#save-edits")
+    expect(page.locator("#status")).to_have_text("All changes saved")
+
+    # "Edit text": click the (new) line, retype it; the old line is covered in the page colour
+    wait_rendered(page, ".page[data-page='1'] canvas")
+    tool("edittext")
+    page.mouse.click(*at(100, 92))
+    editor = page.locator(".edit-textbox")
+    expect(editor).to_have_value("Invoice Sum 100")
+    page.keyboard.press("Control+a")
+    page.keyboard.type("Invoice Sum 250 paid")
+    page.keyboard.press("Control+Enter")
+    expect(count).to_have_text("2 unsaved edits")
+    expect(page.locator(".edit-layer rect.whiteout")).to_have_attribute("fill", "#ffffff")
+    tool("edittext")
+    page.mouse.click(*at(400, 600))                     # empty area: nothing to edit there
+    expect(page.locator(".pm-toast").last).to_contain_text("Click on a line of text")
+
+    # check mark, cross, strike-through, underline, a filled rectangle and a typed signature
+    tool("tick"); page.mouse.click(*at(100, 300))
+    tool("cross"); page.mouse.click(*at(140, 300))
+    tool("strike")
+    page.mouse.move(*at(72, 180)); page.mouse.down(); page.mouse.move(*at(150, 190), steps=3); page.mouse.move(*at(300, 204), steps=3); page.mouse.up()
+    tool("underline")
+    page.mouse.move(*at(72, 220)); page.mouse.down(); page.mouse.move(*at(150, 230), steps=3); page.mouse.move(*at(300, 244), steps=3); page.mouse.up()
+    expect(page.locator(".edit-layer line[stroke-linecap]")).to_have_count(2)
+    page.click("#edit-fill-on")
+    tool("rect")
+    page.mouse.move(*at(350, 300)); page.mouse.down(); page.mouse.move(*at(400, 330), steps=3); page.mouse.move(*at(450, 360), steps=3); page.mouse.up()
+    expect(page.locator(".edit-layer rect[fill='#fff2a8']")).to_have_count(1)
+    page.click("#edit-sign")
+    page.fill("#sign-name", "Asha Rao")
+    page.click("#sign-dialog button[value=ok]")
+    expect(page.locator(".edit-layer image")).to_have_count(1)
+    expect(count).to_have_text("8 unsaved edits")
+
+    if os.environ.get("PDFMASTER_SCREENSHOT_DIR"):
+        page.screenshot(path=os.path.join(os.environ["PDFMASTER_SCREENSHOT_DIR"], "edit2.png"))
+    page.click("#save-edits")
+    expect(page.locator("#status")).to_have_text("All changes saved")
+    with page.expect_download() as dl:
+        page.click("#download")
+    first, second = PdfReader(io.BytesIO(Path(dl.value.path()).read_bytes())).pages
+    assert "Invoice Sum 250 paid" in first.extract_text() and "Sum again" in second.extract_text()
+    assert len(first.images) == 1
+    found = {}
+    first.extract_text(visitor_text=lambda t, cm, tm, f, s: found.setdefault(t.strip(), (tm[4], tm[5], s)) if t.strip() else None)
+    x, y, size = found["Invoice Sum 250 paid"]
+    assert abs(x - 72) < 1 and abs(y - 692) < 1.5 and abs(size - 24) < 0.6, (x, y, size)   # same place and size as the original line
+    assert page.problems == [], page.problems
