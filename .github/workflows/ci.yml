@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pdfmaster
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: pdfmaster
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pdfmaster" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r backend/requirements-dev.txt
+      - name: Backend tests (SQLite)
+        run: pytest
+      - name: Migrations apply cleanly on PostgreSQL
+        working-directory: backend
+        env:
+          PDFMASTER_DATABASE_URL: postgresql+psycopg://pdfmaster:ci-only-password@localhost:5432/pdfmaster
+        run: alembic upgrade head && alembic check
+      - name: Browser tests
+        run: |
+          playwright install --with-deps chromium
+          pytest tests/frontend
