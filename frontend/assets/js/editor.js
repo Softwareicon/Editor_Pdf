@@ -248,7 +248,8 @@ function goToPage(n, smooth = false) {
 }
 
 function setCurrent(n) {
-  if (n === state.current && $("page-input").value === String(n)) return;
+  // Same page: resync the box only if the user is not typing a page number into it right now.
+  if (n === state.current && ($("page-input").value === String(n) || document.activeElement === $("page-input"))) return;
   state.thumbs?.[state.current - 1]?.classList.remove("active");
   state.current = n;
   $("page-input").value = n;
